@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Лента времени</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="banner">
+    <div class="banner-text">
+      <h1>Лента времени</h1>
+      <p id="subtitle" class="subtitle"></p>
+    </div>
+    <div class="toolbar">
+      <label class="btn primary">
+        Загрузить файл
+        <input class="js-file" type="file" accept=".xlsx,.xlsm,.xls,.ods,.csv,.html,.htm" hidden>
+      </label>
+      <label class="field" title="Момент расчёта: незавершённые задачи тянутся до него. По умолчанию — из имени файла выгрузки">
+        <span>Сейчас</span>
+        <input id="now" type="datetime-local" step="1">
+      </label>
+      <label class="field" title="Час, с которого начинается ось (пусто — с часа первой задачи)">
+        <span>Начало оси, ч</span>
+        <input id="day-start" type="number" min="0" max="23" inputmode="numeric">
+      </label>
+      <label class="field">
+        <span>Колонка</span>
+        <select id="step">
+          <option value="1">1 ч</option>
+          <option value="2">2 ч</option>
+          <option value="3">3 ч</option>
+          <option value="4">4 ч</option>
+          <option value="6">6 ч</option>
+        </select>
+      </label>
+      <label class="field" title="Как в Excel-отчёте, лента ограничена 72 колонками">
+        <span>Колонок</span>
+        <select id="max-cols">
+          <option value="72">до 72</option>
+          <option value="all">все</option>
+        </select>
+      </label>
+      <button id="print" class="btn" type="button">Печать</button>
+    </div>
+  </header>
+
+  <div class="sourcebar"><span id="source"></span></div>
+  <div id="msg" class="msg" role="status"></div>
+
+  <main>
+    <section id="empty" class="empty">
+      <label class="dropzone">
+        <input class="js-file" type="file" hidden accept=".xlsx,.xlsm,.xls,.ods,.csv,.html,.htm">
+        <strong>Перетащите выгрузку сюда</strong>
+        <span>или нажмите, чтобы выбрать файл</span>
+        <small>.xlsx / .xls из Bitrix, либо сохранённая HTML-страница списка задач</small>
+      </label>
+    </section>
+    <div id="scroller" class="scroller" hidden></div>
+    <p id="legend" class="legend" hidden>
+      Легенда: цвет полосы = статус/срок.
+      <span class="sw" style="background:#2E7D4F"></span>завершена в срок
+      <span class="sw" style="background:#B42318"></span>завершена с нарушением срока
+      <span class="sw" style="background:#C47A16"></span>на рассмотрении
+      <span class="sw" style="background:#9A3412"></span>на рассмотрении, срок нарушен
+      <span class="sw" style="background:#2B6CB0"></span>выполняется
+      <span class="sw" style="background:#C45C26"></span>выполняется, срок прошёл.
+      ◆ — интервал крайнего срока. Нижняя строка — пересечение задач.
+    </p>
+  </main>
+
+  <div id="drop" class="drop"><div>Отпустите файл, чтобы построить ленту</div></div>
+  <div id="tooltip" class="tooltip" hidden></div>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/sources/xlsx-source.js"></script>
+  <script src="js/sources/html-source.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
