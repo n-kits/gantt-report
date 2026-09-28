@@ -66,11 +66,15 @@
     return out.join('');
   }
 
-  // Отклонение от срока: меньше часа — в минутах, иначе в часах. null — меньше минуты.
+  // Отклонение от срока: меньше часа — в минутах, до суток — в часах,
+  // больше суток — «X дн Y ч». null — меньше минуты.
   function fmtDelta(hours) {
     const min = Math.round(Math.abs(hours) * 60);
     if (min < 1) return null;
-    return min < 60 ? `${min} мин` : `${(min / 60).toFixed(1)} ч`;
+    if (min < 60) return `${min} мин`;
+    if (min <= 24 * 60) return `${(min / 60).toFixed(1)} ч`;
+    const totalH = Math.round(min / 60);
+    return `${Math.floor(totalH / 24)} дн ${totalH % 24} ч`;
   }
 
   function tooltipHtml(r) {

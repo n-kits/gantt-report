@@ -92,6 +92,9 @@
     const far = d(2026, 9, 30);
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: 72 }).nSlots, 72);
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: Infinity }).nSlots, 382);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 24 }).nSlots, 24);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 48 }).nSlots, 48);
+    eq(M.inferWindow(tasks, NOW, { step: 1, maxCols: 24 }).nSlots, 10, 'данных меньше лимита');
   });
 
   test('buildTimeline: интервалы, срок, загрузка', () => {
