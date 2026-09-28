@@ -111,7 +111,7 @@ table.tl {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  width: max-content;
+  width: calc(var(--w-id) + var(--w-name) + var(--w-exec) + var(--w-status) + var(--n-slots) * var(--slot-w));
   font-size: 11px;
 }
 .tl col.c-id { width: var(--w-id); }

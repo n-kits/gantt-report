@@ -14,7 +14,9 @@
   function render(tl) {
     const slotW = tl.step === 1 ? 24 : 30;
     const out = [];
-    out.push(`<table class="tl" style="--slot-w:${slotW}px">`);
+    // точная ширина = сумма колонок: иначе длинные названия растягивают колонки
+    // и закреплённая часть расходится со строками «Задача» / «Одновременно в работе»
+    out.push(`<table class="tl" style="--slot-w:${slotW}px; --n-slots:${tl.nSlots}">`);
 
     out.push('<colgroup><col class="c-id"><col class="c-name"><col class="c-exec"><col class="c-status">');
     for (let i = 0; i < tl.nSlots; i++) out.push('<col class="c-slot">');
