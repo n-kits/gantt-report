@@ -64,14 +64,22 @@
     return out.join('');
   }
 
+  // Отклонение от срока: меньше часа — в минутах, иначе в часах. null — меньше минуты.
+  function fmtDelta(hours) {
+    const min = Math.round(Math.abs(hours) * 60);
+    if (min < 1) return null;
+    return min < 60 ? `${min} мин` : `${(min / 60).toFixed(1)} ч`;
+  }
+
   function tooltipHtml(r) {
     const t = r.task;
     let note = '';
     if (t.late) {
-      note = `<span class="tt-late">срок нарушен${t.delayH != null ? ` на ${t.delayH.toFixed(1)} ч` : ''}</span>`;
+      const d = t.delayH != null ? fmtDelta(t.delayH) : '';
+      note = `<span class="tt-late">срок нарушен${d ? ` на ${d}` : d === null ? ' меньше чем на минуту' : ''}</span>`;
     } else if (t.finish && t.delayH != null) {
-      const early = -t.delayH;
-      note = `<span class="tt-early">${early >= 0.05 ? `раньше срока на ${early.toFixed(1)} ч` : 'точно в срок'}</span>`;
+      const d = fmtDelta(t.delayH);
+      note = `<span class="tt-early">${d ? `раньше срока на ${d}` : 'точно в срок'}</span>`;
     }
     const finish = t.finish ? M.fmtFull(t.finish) : '— (не завершена)';
     return `
