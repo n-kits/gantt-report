@@ -17,6 +17,10 @@
         Загрузить файл
         <input class="js-file" type="file" accept=".xlsx,.xlsm,.xls,.ods,.csv,.html,.htm" hidden>
       </label>
+    </div>
+    <!-- ЗАМОРОЖЕНО: поля «Колонка» и «Колонок». Браузер не показывает <template>;
+         включить — FEATURES.viewControls = true в js/app.js (проверить без правки кода: ?controls=1). -->
+    <template id="view-controls-tpl">
       <label class="field">
         <span>Колонка</span>
         <select id="step">
@@ -36,7 +40,7 @@
           <option value="all">все</option>
         </select>
       </label>
-    </div>
+    </template>
   </header>
 
   <div id="live" class="live" hidden>

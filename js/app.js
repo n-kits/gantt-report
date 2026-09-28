@@ -9,6 +9,17 @@
   const T = root.GanttTimeline;
   const STORAGE_KEY = 'gantt-timeline.v1';
 
+  // Замороженные функции: код рабочий, разметка лежит в <template> в index.html.
+  const FEATURES = {
+    // поля «Колонка» (шаг 1–6 ч) и «Колонок» (до 24/48/72/все);
+    // выключено — всегда 1 ч и «до 72». Проверить без правки кода: ?controls=1
+    viewControls: false,
+  };
+  if (new URLSearchParams(location.search).get('controls') === '1') FEATURES.viewControls = true;
+  if (FEATURES.viewControls) {
+    document.querySelector('.toolbar').append(document.getElementById('view-controls-tpl').content.cloneNode(true));
+  }
+
   const $ = sel => document.querySelector(sel);
   const el = {
     step: $('#step'),
@@ -56,9 +67,12 @@
         sourceName: s.sourceName || '',
         kind: s.kind || '',
         now: s.now != null && !isNaN(new Date(s.now)) ? new Date(s.now) : null,
-        step: +s.step || 1,
-        maxCols: s.maxCols || state.maxCols,
       });
+      // сохранённые шаг и лимит действуют, только пока поля включены
+      if (FEATURES.viewControls) {
+        state.step = +s.step || 1;
+        state.maxCols = s.maxCols || state.maxCols;
+      }
     } catch (e) { /* повреждённые данные — начинаем с чистого листа */ }
   }
 
@@ -92,8 +106,8 @@
 
   // --- перестроение ---------------------------------------------------------
   function syncControls() {
-    el.step.value = String(state.step);
-    el.maxCols.value = state.maxCols;
+    if (el.step) el.step.value = String(state.step);
+    if (el.maxCols) el.maxCols.value = state.maxCols;
   }
 
   function rebuild() {
@@ -123,6 +137,9 @@
     el.scroller.innerHTML = T.render(timeline);
     hlIndex = null;
     hlCells = [];
+    nowIndex = null;
+    nowCells = [];
+    markNowHour();
     el.subtitle.textContent = timeline.subtitle;
     el.source.textContent =
       `${state.sourceName} · задач: ${timeline.tasks.length}`;
@@ -137,8 +154,8 @@
     });
   });
 
-  el.step.addEventListener('change', () => { state.step = +el.step.value || 1; rebuild(); });
-  el.maxCols.addEventListener('change', () => { state.maxCols = el.maxCols.value; rebuild(); });
+  if (el.step) el.step.addEventListener('change', () => { state.step = +el.step.value || 1; rebuild(); });
+  if (el.maxCols) el.maxCols.addEventListener('change', () => { state.maxCols = el.maxCols.value; rebuild(); });
 
   // drag & drop на всё окно
   let dragDepth = 0;
@@ -184,6 +201,26 @@
     el.tooltip.style.top = Math.max(8, y) + 'px';
   });
   el.scroller.addEventListener('mouseleave', () => { el.tooltip.hidden = true; highlightColumn(null); });
+
+  // текущий час по часам компьютера — постоянная подсветка колонки, переезжает сама
+  let nowIndex = null;
+  let nowCells = [];
+  function markNowHour() {
+    const table = el.scroller.querySelector('table.tl');
+    let i = null;
+    if (timeline && table) {
+      const k = Math.floor((Date.now() - timeline.base) / (timeline.step * 3600000));
+      if (k >= 0 && k < timeline.nSlots) i = k;
+    }
+    if (i === nowIndex && nowCells.length) return;
+    nowCells.forEach(c => c.classList.remove('now-col'));
+    nowIndex = i;
+    nowCells = i == null ? [] : T.columnCells(table, i);
+    nowCells.forEach(c => c.classList.add('now-col'));
+    const th = nowCells[0];
+    if (th) th.title = 'Текущий час';
+  }
+  setInterval(markNowHour, 30 * 1000);
 
   // подсветка часовой колонки — сопоставить час, задачи и «Одновременно в работе»
   let hlIndex = null;

@@ -209,6 +209,15 @@ table.tl {
 .tl td.col-hl { box-shadow: inset 0 0 0 999px rgba(15, 44, 58, .10); }
 .tl .h-hours th.col-hl { box-shadow: inset 0 -3px 0 #fff; filter: brightness(1.35); }
 
+/* текущий час: оранжевые линии по краям колонки и лёгкая заливка поверх любого фона */
+.tl td.s.now-col { position: relative; }
+.tl td.now-col::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  border-left: 2px solid var(--accent); border-right: 2px solid var(--accent);
+  background: rgba(196, 92, 38, .10);
+}
+.tl .h-hours th.now-col { background: var(--accent) !important; filter: none; }
+
 /* итоговая строка */
 .tl tr.gap td { background: #fff; border-right: 0; }
 .tl tr.cap td {
