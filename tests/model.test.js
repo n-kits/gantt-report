@@ -111,6 +111,15 @@
     eq(tl.subtitle.includes('14.09 04:00 → 14.09 14:00'), true);
   });
 
+  test('buildTimeline: часы в цвет своего дня', () => {
+    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: d(2026, 9, 15, 6, 0), dayStartHour: 4, step: 1 });
+    eq(tl.dayGroups.length, 2);
+    tl.dayGroups.forEach(g => {
+      for (let i = g.from; i <= g.to; i++) eq(tl.hourHeads[i].color, g.color, `час ${i}`);
+    });
+    eq(tl.dayGroups[0].color !== tl.dayGroups[1].color, true);
+  });
+
   test('buildTimeline: шаг 2 ч', () => {
     const tl = M.buildTimeline([HEADER].concat(ROWS), { now: NOW, dayStartHour: 4, step: 2 });
     eq(tl.nSlots, 8);

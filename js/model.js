@@ -43,7 +43,6 @@
   const STATUS_BG = { [STATUS_DONE]: C.green_bg, [STATUS_REVIEW]: C.orange_bg, [STATUS_RUN]: C.blue_bg };
   const EXEC_PALETTE = ['#1D4E89', '#0F766E', '#9A3412', '#7C3AED', '#BE185D', '#365314', '#0E7490', '#92400E'];
   const DAY_PALETTE = ['#1D4E89', '#9A3412', '#0F766E', '#6B21A8', '#92400E'];
-  const HOUR_HEAD = ['#1B3A4B', '#7C2D12'];
 
   // ---------------------------------------------------------------------------
   // Разбор значений
@@ -288,11 +287,6 @@
     return '#E8E4D9';
   }
 
-  // Порядковый номер дня (как date.toordinal() в Python) — для чередования цвета часов.
-  function dayOrdinal(d) {
-    return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000) + 719163;
-  }
-
   const pad2 = n => String(n).padStart(2, '0');
   const fmtDate = d => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
   const fmtDM = d => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
@@ -324,9 +318,10 @@
     });
     dayGroups.forEach((g, gi) => { g.color = DAY_PALETTE[gi % DAY_PALETTE.length]; });
 
-    const hourHeads = hours.map(h => ({
+    // часы окрашиваются в цвет своего дня
+    const hourHeads = hours.map((h, i) => ({
       label: pad2(h.getHours()),
-      color: HOUR_HEAD[dayOrdinal(h) % 2],
+      color: dayGroups.find(g => g.from <= i && i <= g.to).color,
       date: h,
     }));
 
