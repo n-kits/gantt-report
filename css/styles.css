@@ -164,7 +164,13 @@ table.tl {
 
 /* итоговая строка */
 .tl tr.gap td { background: #fff; border-right: 0; }
-.tl tr.cap td { font-weight: 700; font-size: 11px; }
+.tl tr.cap td {
+  position: sticky; bottom: 0; z-index: 2;
+  font-weight: 700; font-size: 11px;
+  border-top: 2px solid var(--navy);
+  box-shadow: 0 -3px 6px rgba(15, 44, 58, .15);
+}
+.tl tr.cap td.fz-all { z-index: 3; }
 .tl tr.cap td.fz-all { background: var(--total); text-align: right; padding-right: 8px; font-size: 13px; color: var(--text); }
 
 .legend { margin: 8px 0 0; font-size: 12px; font-style: italic; color: var(--gray); line-height: 1.8; }
@@ -194,5 +200,5 @@ table.tl {
   main { padding: 0; }
   .scroller { overflow: visible; max-height: none; border: 0; }
   .tl * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .tl .fz, .tl thead th { position: static; }
+  .tl .fz, .tl thead th, .tl tr.cap td { position: static; box-shadow: none; }
 }

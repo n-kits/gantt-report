@@ -54,13 +54,13 @@
       out.push('</tr>');
     });
 
-    // Пустая строка + «Одновременно в работе»
+    // Пустая строка, затем «Одновременно в работе» — закреплена внизу (tfoot, sticky)
     out.push(`<tr class="gap"><td class="fz fz-all" colspan="4"></td><td colspan="${tl.nSlots}"></td></tr>`);
-    out.push('<tr class="cap"><td class="fz fz-all" colspan="4">Одновременно в работе</td>');
+    out.push('</tbody><tfoot><tr class="cap"><td class="fz fz-all" colspan="4">Одновременно в работе</td>');
     for (const c of tl.capacity) {
       out.push(`<td style="background:${c.color};color:${c.textColor}">${c.count}</td>`);
     }
-    out.push('</tr></tbody></table>');
+    out.push('</tr></tfoot></table>');
     return out.join('');
   }
 
