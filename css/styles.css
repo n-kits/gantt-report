@@ -196,4 +196,5 @@ table.tl {
 .tooltip td { padding: 1px 0; }
 .tt-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; }
 .tt-late { color: #B42318; font-weight: 700; margin-left: 6px; }
+.tt-early { color: #2E7D4F; font-weight: 700; margin-left: 6px; }
 

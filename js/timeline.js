@@ -66,9 +66,13 @@
 
   function tooltipHtml(r) {
     const t = r.task;
-    const late = t.late
-      ? `<span class="tt-late">срок нарушен${t.delayH != null ? ` на ${t.delayH.toFixed(1)} ч` : ''}</span>`
-      : '';
+    let note = '';
+    if (t.late) {
+      note = `<span class="tt-late">срок нарушен${t.delayH != null ? ` на ${t.delayH.toFixed(1)} ч` : ''}</span>`;
+    } else if (t.finish && t.delayH != null) {
+      const early = -t.delayH;
+      note = `<span class="tt-early">${early >= 0.05 ? `раньше срока на ${early.toFixed(1)} ч` : 'точно в срок'}</span>`;
+    }
     const finish = t.finish ? M.fmtFull(t.finish) : '— (не завершена)';
     return `
       <div class="tt-title">${t.id ? `#${esc(t.id)} ` : ''}${esc(t.name.replace(/\s*#[^#]*$/, ''))}</div>
@@ -76,7 +80,7 @@
         <tr><th>Проект</th><td>${esc(t.project || '—')}</td></tr>
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
         <tr><th>Вид продукции</th><td>${esc(t.product)}</td></tr>
-        <tr><th>Статус</th><td><span class="tt-dot" style="background:${r.barColor}"></span>${esc(t.status)} ${late}</td></tr>
+        <tr><th>Статус</th><td><span class="tt-dot" style="background:${r.barColor}"></span>${esc(t.status)} ${note}</td></tr>
         <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}</td></tr>
         <tr><th>Завершение</th><td>${finish}</td></tr>
         <tr><th>Крайний срок</th><td>${M.fmtFull(t.deadline)}</td></tr>
