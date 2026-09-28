@@ -23,7 +23,6 @@
     legend: $('#legend'),
     drop: $('#drop'),
     tooltip: $('#tooltip'),
-    print: $('#print'),
   };
 
   const state = {
@@ -119,7 +118,6 @@
     el.empty.hidden = has;
     el.scroller.hidden = !has;
     el.legend.hidden = !has;
-    el.print.disabled = !has;
     if (!has) {
       el.subtitle.textContent = 'Загрузите выгрузку задач, чтобы построить ленту.';
       el.source.textContent = '';
@@ -170,7 +168,6 @@
   });
   el.step.addEventListener('change', () => { state.step = +el.step.value || 1; rebuild(); });
   el.maxCols.addEventListener('change', () => { state.maxCols = el.maxCols.value; rebuild(); });
-  el.print.addEventListener('click', () => window.print());
 
   // drag & drop на всё окно
   let dragDepth = 0;

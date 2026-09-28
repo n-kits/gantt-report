@@ -191,14 +191,3 @@ table.tl {
 .tt-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; }
 .tt-late { color: #B42318; font-weight: 700; margin-left: 6px; }
 
-/* --- Печать: A3 альбом, как в отчёте ------------------------------------- */
-@media print {
-  @page { size: A3 landscape; margin: 10mm; }
-  body { background: #fff; display: block; }
-  .toolbar, .sourcebar, .msg, .drop, .tooltip, .empty { display: none !important; }
-  .banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  main { padding: 0; }
-  .scroller { overflow: visible; max-height: none; border: 0; }
-  .tl * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .tl .fz, .tl thead th, .tl tr.cap td { position: static; box-shadow: none; }
-}
