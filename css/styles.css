@@ -65,7 +65,6 @@ body { background: var(--page); min-height: 100vh; display: flex; flex-direction
 .msg { display: none; margin: 0 16px 8px; padding: 6px 10px; border-radius: 3px; font-size: 13px; }
 .msg.show { display: block; }
 .msg.error { background: #F8D7D3; color: #B42318; }
-.msg.warn { background: #F8E6C8; color: #9A3412; }
 .msg.info { background: #D6E6F5; color: #2B6CB0; }
 
 main { flex: 1; padding: 0 16px 16px; min-height: 0; }
@@ -81,7 +80,15 @@ main { flex: 1; padding: 0 16px 16px; min-height: 0; }
 }
 .dropzone:hover { border-color: var(--navy); }
 .dropzone strong { font-size: 18px; color: var(--header); }
-.dropzone small { color: var(--gray); }
+.expect {
+  margin-top: 18px; padding: 12px 16px; width: 100%;
+  background: #F8E6C8; border-left: 4px solid #C47A16; border-radius: 3px;
+  text-align: left; font-size: 14px; color: var(--text);
+}
+.expect p { margin: 0 0 6px; }
+.expect ol { margin: 0; padding-left: 22px; columns: 2; column-gap: 24px; }
+.expect li { padding: 1px 0; break-inside: avoid; }
+@media (max-width: 520px) { .expect ol { columns: 1; } }
 
 .drop {
   position: fixed; inset: 0; z-index: 50; display: none;

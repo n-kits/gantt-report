@@ -123,11 +123,6 @@
     el.subtitle.textContent = timeline.subtitle;
     el.source.textContent =
       `${state.sourceName} · задач: ${timeline.tasks.length}`;
-    if (timeline.positional) {
-      showMsg('Заголовки колонок не распознаны — колонки взяты по стандартному порядку выгрузки.', 'warn');
-    } else if (el.msg.classList.contains('warn')) {
-      showMsg('');
-    }
     save();
   }
 
@@ -183,6 +178,9 @@
     el.tooltip.style.top = Math.max(8, y) + 'px';
   });
   el.scroller.addEventListener('mouseleave', () => { el.tooltip.hidden = true; });
+
+  document.getElementById('fields-list').innerHTML =
+    M.FIELD_ORDER.map(k => `<li>${M.FIELD_TITLES[k]}</li>`).join('');
 
   restore();
   rebuild();

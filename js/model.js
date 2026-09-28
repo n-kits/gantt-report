@@ -17,19 +17,12 @@
   const MAX_TIMELINE_COLS = 72;
   const HOUR = 3600 * 1000;
 
-  // Фиксированный порядок колонок выгрузки — используется, когда заголовков нет.
-  const FIELD_ORDER = ['name', 'project', 'start', 'executor', 'works', 'finish', 'status', 'deadline', 'product'];
-
-  const COL_ALIASES = {
-    name: ['название', 'задача', 'наименование'],
-    project: ['проект'],
-    start: ['регистрация', 'создана', 'старт', 'начало'],
-    executor: ['исполнитель', 'ответственный'],
-    works: ['виды работ', 'работы', 'вид работ'],
-    finish: ['завершение', 'финиш', 'окончание', 'закрыта'],
-    status: ['статус', 'состояние'],
-    deadline: ['крайний срок', 'дедлайн', 'срок'],
-    product: ['вид продукции', 'продукция', 'тип'],
+  // Порядок колонок выгрузки Bitrix «Отображаемый список задач». Заголовков нет.
+  const FIELD_ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works'];
+  const FIELD_TITLES = {
+    name: 'Название задачи', status: 'Статус', start: 'Регистрация', finish: 'Завершение',
+    executor: 'Текущий исполнитель', deadline: 'Крайний срок', project: 'Проект заказчика',
+    product: 'Вид продукции', works: 'Выполнение задачи',
   };
 
   const C = {
@@ -47,16 +40,6 @@
   // ---------------------------------------------------------------------------
   // Разбор значений
   // ---------------------------------------------------------------------------
-
-  // Нормализация заголовка: пробелы, регистр, нумерация вида «1.», «2)», «№3».
-  function norm(s) {
-    return String(s == null ? '' : s)
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase()
-      .replace(/^(№\s*)?\d+\s*[.)\-:]?\s+/, '')
-      .replace(/ё/g, 'е');
-  }
 
   function isValidDate(d) {
     return d instanceof Date && !isNaN(d.getTime());
@@ -130,41 +113,8 @@
     return dt && dt.getHours() === h && dt.getMinutes() === mi ? dt : null;
   }
 
-  // ---------------------------------------------------------------------------
-  // Колонки
-  // ---------------------------------------------------------------------------
-
-  function matchHeader(row) {
-    const idx = {};
-    (row || []).forEach((raw, i) => {
-      const h = norm(raw);
-      if (!h) return;
-      for (const key of Object.keys(COL_ALIASES)) {
-        if (COL_ALIASES[key].some(a => h === a || h.startsWith(a))) {
-          if (!(key in idx)) idx[key] = i;
-        }
-      }
-    });
-    return idx;
-  }
-
-  /*
-   * Ищет строку заголовков среди первых строк. Если заголовков нет
-   * (или они не распознаны) — колонки берутся по фиксированному порядку FIELD_ORDER.
-   * Возвращает { col, headerRow, positional }.
-   */
-  function detectColumns(rows) {
-    const limit = Math.min(rows.length, 10);
-    for (let r = 0; r < limit; r++) {
-      const idx = matchHeader(rows[r]);
-      if ('name' in idx && 'start' in idx && Object.keys(idx).length >= 3) {
-        return { col: idx, headerRow: r, positional: false };
-      }
-    }
-    const col = {};
-    FIELD_ORDER.forEach((k, i) => { col[k] = i; });
-    return { col, headerRow: -1, positional: true };
-  }
+  const COL = {};
+  FIELD_ORDER.forEach((k, i) => { COL[k] = i; });
 
   function isEmptyRow(raw) {
     return !raw || raw.every(c => c == null || String(c).trim() === '');
@@ -176,20 +126,19 @@
 
   function loadTasks(rows, now) {
     if (!rows || !rows.length) throw new Error('Пустая таблица');
-    const { col, headerRow, positional } = detectColumns(rows);
     const tasks = [];
-    for (let r = headerRow + 1; r < rows.length; r++) {
+    for (let r = 0; r < rows.length; r++) {
       const raw = rows[r];
       if (isEmptyRow(raw)) continue;
       const get = key => {
-        const i = col[key];
+        const i = COL[key];
         return i != null && i < raw.length ? raw[i] : null;
       };
       const name = String(get('name') == null ? '' : get('name')).trim();
       if (!name) continue;
       const start = parseDt(get('start'));
-      // без заголовков строка без даты регистрации — скорее всего шапка/мусор
-      if (positional && !start) continue;
+      // строка без даты регистрации — шапка или мусор
+      if (!start) continue;
       const finish = parseDt(get('finish'));
       const deadline = parseDt(get('deadline'));
       const status = String(get('status') == null ? '' : get('status')).trim();
@@ -230,7 +179,7 @@
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
     if (!tasks.length) throw new Error('Не удалось прочитать ни одной задачи');
-    return { tasks, positional, columns: col };
+    return { tasks };
   }
 
   function floorHour(d) {
@@ -364,7 +313,6 @@
       windowEnd,
       step,
       nSlots,
-      positional: loaded.positional,
       tasks,
       dayGroups,
       hourHeads,
@@ -378,9 +326,9 @@
 
   const api = {
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN,
-    DAY_START_HOUR, MAX_TIMELINE_COLS, FIELD_ORDER, COL_ALIASES, C,
-    norm, parseDt, extractId, shortName, guessNowFromFilename,
-    detectColumns, loadTasks, inferWindow, barColor, capacityColor, buildTimeline,
+    DAY_START_HOUR, MAX_TIMELINE_COLS, FIELD_ORDER, FIELD_TITLES, C,
+    parseDt, extractId, shortName, guessNowFromFilename,
+    loadTasks, inferWindow, barColor, capacityColor, buildTimeline,
     fmtFull, fmtDMHM,
   };
   root.GanttModel = api;

@@ -46,7 +46,11 @@
         <input class="js-file" type="file" hidden accept=".xlsx,.xlsm,.xls,.ods,.csv,.html,.htm">
         <strong>Перетащите выгрузку сюда</strong>
         <span>или нажмите, чтобы выбрать файл</span>
-        <small>.xlsx / .xls из Bitrix, либо сохранённая HTML-страница списка задач</small>
+        <div class="expect">
+          <p>Принимается выгрузка из Bitrix <b>«Отображаемый список задач»</b>
+            с 9 полями строго в таком порядке:</p>
+          <ol id="fields-list"></ol>
+        </div>
       </label>
     </section>
     <div id="scroller" class="scroller" hidden></div>
