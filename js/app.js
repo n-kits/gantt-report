@@ -12,7 +12,6 @@
   const $ = sel => document.querySelector(sel);
   const el = {
     now: $('#now'),
-    dayStart: $('#day-start'),
     step: $('#step'),
     maxCols: $('#max-cols'),
     subtitle: $('#subtitle'),
@@ -30,7 +29,6 @@
     sourceName: '',
     kind: '',
     now: null,
-    dayStart: M.DEFAULT_DAY_START_HOUR,
     step: 1,
     maxCols: String(M.MAX_TIMELINE_COLS),
   };
@@ -54,7 +52,6 @@
         sourceName: state.sourceName,
         kind: state.kind,
         now: state.now ? toLocalInput(state.now) : null,
-        dayStart: state.dayStart,
         step: state.step,
         maxCols: state.maxCols,
       }));
@@ -70,7 +67,6 @@
         sourceName: s.sourceName || '',
         kind: s.kind || '',
         now: fromLocalInput(s.now),
-        dayStart: s.dayStart == null ? state.dayStart : s.dayStart,
         step: +s.step || 1,
         maxCols: s.maxCols || state.maxCols,
       });
@@ -107,7 +103,6 @@
   // --- перестроение ---------------------------------------------------------
   function syncControls() {
     el.now.value = state.now ? toLocalInput(state.now) : '';
-    el.dayStart.value = state.dayStart;
     el.step.value = String(state.step);
     el.maxCols.value = state.maxCols;
   }
@@ -126,7 +121,6 @@
     try {
       timeline = M.buildTimeline(state.rows, {
         now: state.now || new Date(),
-        dayStartHour: state.dayStart === '' ? null : +state.dayStart,
         step: state.step,
         maxCols: state.maxCols === 'all' ? Infinity : +state.maxCols,
       });
@@ -160,11 +154,6 @@
   el.now.addEventListener('change', () => {
     const d = fromLocalInput(el.now.value);
     if (d) { state.now = d; rebuild(); }
-  });
-  el.dayStart.addEventListener('change', () => {
-    const v = el.dayStart.value.trim();
-    state.dayStart = v === '' ? '' : Math.max(0, Math.min(23, parseInt(v, 10) || 0));
-    rebuild();
   });
   el.step.addEventListener('change', () => { state.step = +el.step.value || 1; rebuild(); });
   el.maxCols.addEventListener('change', () => { state.maxCols = el.maxCols.value; rebuild(); });

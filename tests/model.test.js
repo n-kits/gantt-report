@@ -90,19 +90,19 @@
 
   test('inferWindow: ось с 04:00, минимум 8 колонок, лимит 72', () => {
     const { tasks } = M.loadTasks([HEADER].concat(ROWS), NOW);
-    const w = M.inferWindow(tasks, NOW, { dayStartHour: 4, step: 1, maxCols: 72 });
+    const w = M.inferWindow(tasks, NOW, { step: 1, maxCols: 72 });
     eq(iso(w.base), '2026-9-14 4:0:0');
     eq(iso(w.end), '2026-9-14 13:0:0');
     eq(w.nSlots, 10);
-    const w2 = M.inferWindow(tasks, NOW, { dayStartHour: 9, step: 1, maxCols: 72 });
-    eq(iso(w2.base), '2026-9-13 9:0:0', 'первая задача раньше начала суток');
+    const early = M.loadTasks([HEADER, ['Ночная #9', '', '14.09.26 02:30:00', '', '', '14.09.26 03:10:00', 'Завершена', '', '']].concat(ROWS), NOW).tasks;
+    eq(iso(M.inferWindow(early, NOW, { step: 1, maxCols: 72 }).base), '2026-9-13 4:0:0', 'задача до 04:00 → 04:00 предыдущего дня');
     const far = d(2026, 9, 30);
-    eq(M.inferWindow(tasks, far, { dayStartHour: 4, step: 1, maxCols: 72 }).nSlots, 72);
-    eq(M.inferWindow(tasks, far, { dayStartHour: 4, step: 1, maxCols: Infinity }).nSlots, 382);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 72 }).nSlots, 72);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: Infinity }).nSlots, 382);
   });
 
   test('buildTimeline: интервалы, срок, загрузка', () => {
-    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: NOW, dayStartHour: 4, step: 1 });
+    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: NOW, step: 1 });
     const r0 = tl.rows[0];
     eq([r0.startIdx, r0.endIdx, r0.dlIdx], [3, 5, 5], '07:59 → 09:23, срок 09:30');
     eq(tl.hourHeads.map(h => h.label).slice(0, 3), ['04', '05', '06']);
@@ -112,7 +112,7 @@
   });
 
   test('buildTimeline: часы в цвет своего дня', () => {
-    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: d(2026, 9, 15, 6, 0), dayStartHour: 4, step: 1 });
+    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: d(2026, 9, 15, 6, 0), step: 1 });
     eq(tl.dayGroups.length, 2);
     tl.dayGroups.forEach(g => {
       for (let i = g.from; i <= g.to; i++) eq(tl.hourHeads[i].color, g.color, `час ${i}`);
@@ -121,7 +121,7 @@
   });
 
   test('buildTimeline: шаг 2 ч', () => {
-    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: NOW, dayStartHour: 4, step: 2 });
+    const tl = M.buildTimeline([HEADER].concat(ROWS), { now: NOW, step: 2 });
     eq(tl.nSlots, 8);
     eq([tl.rows[0].startIdx, tl.rows[0].endIdx], [1, 2]);
   });

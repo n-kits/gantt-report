@@ -13,7 +13,7 @@
   const STATUS_REVIEW = 'На рассмотрении';
   const STATUS_RUN = 'Выполняется';
 
-  const DEFAULT_DAY_START_HOUR = 4;
+  const DAY_START_HOUR = 4; // ось всегда начинается с 04:00
   const MAX_TIMELINE_COLS = 72;
   const HOUR = 3600 * 1000;
 
@@ -245,7 +245,6 @@
   }
 
   function inferWindow(tasks, now, opts) {
-    const dayStart = opts.dayStartHour;
     const step = opts.step || 1;
     const maxCols = opts.maxCols || MAX_TIMELINE_COLS;
     const starts = tasks.filter(t => t.start).map(t => t.start);
@@ -253,11 +252,9 @@
     if (!starts.length) throw new Error('Нет ни одной даты регистрации');
     const first = new Date(Math.min(...starts));
     const last = new Date(Math.max(...ends, now));
-    let base = floorHour(first);
-    if (dayStart != null && dayStart !== '') {
-      const cand = new Date(first.getFullYear(), first.getMonth(), first.getDate(), +dayStart, 0, 0);
-      base = cand <= first ? cand : new Date(cand.getFullYear(), cand.getMonth(), cand.getDate() - 1, +dayStart);
-    }
+    // 04:00 дня первой задачи; если задача раньше 04:00 — 04:00 предыдущего дня
+    const cand = new Date(first.getFullYear(), first.getMonth(), first.getDate(), DAY_START_HOUR, 0, 0);
+    const base = cand <= first ? cand : new Date(first.getFullYear(), first.getMonth(), first.getDate() - 1, DAY_START_HOUR);
     const end = addHours(floorHour(last), 1);
     const n = Math.floor(Math.floor((end - base) / HOUR) / step);
     const nSlots = Math.max(8, Math.min(maxCols, n + 1));
@@ -381,7 +378,7 @@
 
   const api = {
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN,
-    DEFAULT_DAY_START_HOUR, MAX_TIMELINE_COLS, FIELD_ORDER, COL_ALIASES, C,
+    DAY_START_HOUR, MAX_TIMELINE_COLS, FIELD_ORDER, COL_ALIASES, C,
     norm, parseDt, extractId, shortName, guessNowFromFilename,
     detectColumns, loadTasks, inferWindow, barColor, capacityColor, buildTimeline,
     fmtFull, fmtDMHM,
