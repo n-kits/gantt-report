@@ -11,7 +11,6 @@
 
   const $ = sel => document.querySelector(sel);
   const el = {
-    now: $('#now'),
     step: $('#step'),
     maxCols: $('#max-cols'),
     subtitle: $('#subtitle'),
@@ -34,16 +33,6 @@
   };
   let timeline = null;
 
-  // --- даты для <input type="datetime-local"> ------------------------------
-  const pad2 = n => String(n).padStart(2, '0');
-  function toLocalInput(d) {
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-  }
-  function fromLocalInput(s) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(s || '');
-    return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null;
-  }
-
   // --- хранение -------------------------------------------------------------
   function save() {
     try {
@@ -51,7 +40,7 @@
         rows: state.rows,
         sourceName: state.sourceName,
         kind: state.kind,
-        now: state.now ? toLocalInput(state.now) : null,
+        now: state.now ? state.now.getTime() : null,
         step: state.step,
         maxCols: state.maxCols,
       }));
@@ -66,7 +55,7 @@
         rows: Array.isArray(s.rows) ? s.rows : null,
         sourceName: s.sourceName || '',
         kind: s.kind || '',
-        now: fromLocalInput(s.now),
+        now: s.now != null && !isNaN(new Date(s.now)) ? new Date(s.now) : null,
         step: +s.step || 1,
         maxCols: s.maxCols || state.maxCols,
       });
@@ -102,7 +91,6 @@
 
   // --- перестроение ---------------------------------------------------------
   function syncControls() {
-    el.now.value = state.now ? toLocalInput(state.now) : '';
     el.step.value = String(state.step);
     el.maxCols.value = state.maxCols;
   }
@@ -134,7 +122,7 @@
     el.scroller.innerHTML = T.render(timeline);
     el.subtitle.textContent = timeline.subtitle;
     el.source.textContent =
-      `${state.sourceName} · задач: ${timeline.tasks.length} · расчёт на ${M.fmtFull(timeline.now)}`;
+      `${state.sourceName} · задач: ${timeline.tasks.length}`;
     if (timeline.positional) {
       showMsg('Заголовки колонок не распознаны — колонки взяты по стандартному порядку выгрузки.', 'warn');
     } else if (el.msg.classList.contains('warn')) {
@@ -151,10 +139,6 @@
     });
   });
 
-  el.now.addEventListener('change', () => {
-    const d = fromLocalInput(el.now.value);
-    if (d) { state.now = d; rebuild(); }
-  });
   el.step.addEventListener('change', () => { state.step = +el.step.value || 1; rebuild(); });
   el.maxCols.addEventListener('change', () => { state.maxCols = el.maxCols.value; rebuild(); });
 
@@ -185,7 +169,7 @@
     if (!tr || !timeline) { el.tooltip.hidden = true; return; }
     const r = timeline.rows[+tr.dataset.i];
     if (el.tooltip.dataset.i !== tr.dataset.i) {
-      el.tooltip.innerHTML = T.tooltipHtml(r, timeline.now);
+      el.tooltip.innerHTML = T.tooltipHtml(r);
       el.tooltip.dataset.i = tr.dataset.i;
     }
     el.tooltip.hidden = false;

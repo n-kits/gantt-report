@@ -64,12 +64,12 @@
     return out.join('');
   }
 
-  function tooltipHtml(r, now) {
+  function tooltipHtml(r) {
     const t = r.task;
     const late = t.late
       ? `<span class="tt-late">срок нарушен${t.delayH != null ? ` на ${t.delayH.toFixed(1)} ч` : ''}</span>`
       : '';
-    const finish = t.finish ? M.fmtFull(t.finish) : `— (идёт, до ${M.fmtFull(now)})`;
+    const finish = t.finish ? M.fmtFull(t.finish) : '— (не завершена)';
     return `
       <div class="tt-title">${t.id ? `#${esc(t.id)} ` : ''}${esc(t.name.replace(/\s*#[^#]*$/, ''))}</div>
       <table>
