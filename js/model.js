@@ -34,7 +34,12 @@
   };
   const STATUS_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.orange, [STATUS_RUN]: C.blue };
   const STATUS_BG = { [STATUS_DONE]: C.green_bg, [STATUS_REVIEW]: C.orange_bg, [STATUS_RUN]: C.blue_bg };
-  const EXEC_PALETTE = ['#1D4E89', '#0F766E', '#9A3412', '#7C3AED', '#BE185D', '#365314', '#0E7490', '#92400E'];
+  // 8 цветов из gantt_report.py + 4 добавленных (индиго, фуксия, сталь, янтарь):
+  // у новых контраст ≥ 4.5 на фоне #FAF8F3 и отличие от любого цвета палитры ΔE2000 ≥ 9
+  const EXEC_PALETTE = [
+    '#1D4E89', '#0F766E', '#9A3412', '#7C3AED', '#BE185D', '#365314', '#0E7490', '#92400E',
+    '#4338CA', '#A21CAF', '#475569', '#B45309',
+  ];
   const DAY_PALETTE = ['#1D4E89', '#9A3412', '#0F766E', '#6B21A8', '#92400E'];
 
   // ---------------------------------------------------------------------------
