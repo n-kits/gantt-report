@@ -355,7 +355,8 @@ def setup(cfg: dict) -> None:
     if v:
         cfg["interval_min"] = max(5, int(v))
     save_config(cfg)
-    print("Сохранено. Дальше: python collect.py --login, затем python collect.py --install-task")
+    print("Сохранено. Дальше: python collect.py --login (вход в Bitrix), затем проверка "
+          "python collect.py --dry-run -v и только после неё python collect.py --install-task")
 
 
 def install_task(cfg: dict) -> None:
