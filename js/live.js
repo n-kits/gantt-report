@@ -20,7 +20,6 @@
   const el = {
     bar: document.getElementById('live'),
     text: document.getElementById('live-text'),
-    refresh: document.getElementById('live-refresh'),
     back: document.getElementById('live-back'),
     form: document.getElementById('live-pass'),
     pass: document.getElementById('live-pass-input'),
@@ -79,7 +78,6 @@
     const needPass = !off && !store.get(PASS_KEY);
     el.form.hidden = !needPass;
     el.back.hidden = !off;
-    el.refresh.hidden = off || needPass;
     el.bar.classList.toggle('ok', !off && envelope.status === 'ok');
     el.text.textContent = off
       ? 'Показан загруженный файл.'
@@ -138,7 +136,6 @@
     renderBar();
     await show(true);
   });
-  el.refresh.addEventListener('click', () => poll(false));
   el.back.addEventListener('click', () => {
     store.set(OFF_KEY, null);
     renderBar();

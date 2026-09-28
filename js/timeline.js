@@ -102,5 +102,25 @@
       </table>`;
   }
 
-  root.GanttTimeline = { render, tooltipHtml };
+  // Индекс часовой колонки под ячейкой (или null): в шапке часов и строках задач
+  // перед часами 4 закреплённые ячейки, в строке «Одновременно в работе» — одна.
+  function slotIndex(cell) {
+    const tr = cell && cell.parentElement;
+    if (!tr) return null;
+    let i = null;
+    if (tr.classList.contains('h-hours') || tr.classList.contains('task')) i = cell.cellIndex - 4;
+    else if (tr.classList.contains('cap')) i = cell.cellIndex - 1;
+    return i != null && i >= 0 ? i : null;
+  }
+
+  // Все ячейки часовой колонки i: час в шапке, ячейки задач, итог внизу.
+  function columnCells(table, i) {
+    const out = [];
+    for (const tr of table.querySelectorAll('tr.h-hours, tr.task')) out.push(tr.cells[i + 4]);
+    const cap = table.querySelector('tr.cap');
+    if (cap) out.push(cap.cells[i + 1]);
+    return out.filter(Boolean);
+  }
+
+  root.GanttTimeline = { render, tooltipHtml, slotIndex, columnCells };
 })(window);

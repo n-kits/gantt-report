@@ -121,6 +121,8 @@
       return;
     }
     el.scroller.innerHTML = T.render(timeline);
+    hlIndex = null;
+    hlCells = [];
     el.subtitle.textContent = timeline.subtitle;
     el.source.textContent =
       `${state.sourceName} · задач: ${timeline.tasks.length}`;
@@ -178,7 +180,22 @@
     el.tooltip.style.left = Math.max(8, x) + 'px';
     el.tooltip.style.top = Math.max(8, y) + 'px';
   });
-  el.scroller.addEventListener('mouseleave', () => { el.tooltip.hidden = true; });
+  el.scroller.addEventListener('mouseleave', () => { el.tooltip.hidden = true; highlightColumn(null); });
+
+  // подсветка часовой колонки — сопоставить час, задачи и «Одновременно в работе»
+  let hlIndex = null;
+  let hlCells = [];
+  function highlightColumn(i) {
+    if (i === hlIndex) return;
+    hlCells.forEach(c => c.classList.remove('col-hl'));
+    hlIndex = i;
+    const table = el.scroller.querySelector('table.tl');
+    hlCells = i == null || !table ? [] : T.columnCells(table, i);
+    hlCells.forEach(c => c.classList.add('col-hl'));
+  }
+  el.scroller.addEventListener('mouseover', e => {
+    highlightColumn(T.slotIndex(e.target.closest('td, th')));
+  });
 
   document.getElementById('fields-list').innerHTML =
     M.FIELD_ORDER.map(k => `<li>${M.FIELD_TITLES[k]}</li>`).join('');
