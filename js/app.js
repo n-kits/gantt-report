@@ -164,7 +164,10 @@
   // подсказка по задаче
   el.scroller.addEventListener('mousemove', e => {
     const tr = e.target.closest('tr.task');
-    if (!tr || !timeline) { el.tooltip.hidden = true; return; }
+    // подсказка — только над колонками ID/Задача/Исп./Статус и закрашенными ячейками (полоса, «◆»)
+    const cell = e.target.closest('td');
+    const tipCell = cell && (cell.classList.contains('fz') || cell.classList.contains('on') || cell.classList.contains('dl'));
+    if (!tr || !timeline || !tipCell) { el.tooltip.hidden = true; return; }
     const r = timeline.rows[+tr.dataset.i];
     if (el.tooltip.dataset.i !== tr.dataset.i) {
       el.tooltip.innerHTML = T.tooltipHtml(r);
