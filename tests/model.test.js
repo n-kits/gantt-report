@@ -90,10 +90,10 @@
     const early = M.loadTasks(DATA.concat([['Ночная #9', 'Завершена', '14.09.26 02:30:00', '14.09.26 03:10:00', '', '', '', '', '']]), NOW).tasks;
     eq(iso(M.inferWindow(early, NOW, { step: 1, maxCols: 72 }).base), '2026-9-13 4:0:0', 'задача до 04:00 → 04:00 предыдущего дня');
     const far = d(2026, 9, 30);
-    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 72 }).nSlots, 72);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 72 }).nSlots, 78, '72 + запас');
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: Infinity }).nSlots, 388);
-    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 24 }).nSlots, 24);
-    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 48 }).nSlots, 48);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 24 }).nSlots, 30);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: 48 }).nSlots, 54);
     eq(M.inferWindow(tasks, NOW, { step: 1, maxCols: 24 }).nSlots, 16, 'данных меньше лимита');
   });
 

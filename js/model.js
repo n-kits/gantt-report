@@ -214,8 +214,8 @@
     const base = cand <= first ? cand : new Date(first.getFullYear(), first.getMonth(), first.getDate() - 1, DAY_START_HOUR);
     const end = addHours(floorHour(last), 1);
     const n = Math.floor(Math.floor((end - base) / HOUR) / step);
-    // лимит «Колонок» действует на всё окно вместе с запасом справа
-    const nSlots = Math.max(8, Math.min(maxCols, n + 1 + TAIL_SLOTS));
+    // лимит «Колонок» — на часы с данными; запас справа добавляется сверх него
+    const nSlots = Math.max(8, Math.min(maxCols, n + 1) + TAIL_SLOTS);
     return { base, end, step, nSlots };
   }
 
