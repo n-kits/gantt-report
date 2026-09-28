@@ -15,6 +15,7 @@
 
   const DAY_START_HOUR = 4; // ось всегда начинается с 04:00
   const MAX_TIMELINE_COLS = 72;
+  const TAIL_SLOTS = 6; // пустые колонки справа — запас под свежие задачи
   const HOUR = 3600 * 1000;
 
   // Порядок колонок выгрузки Bitrix «Отображаемый список задач». Заголовков нет.
@@ -213,7 +214,8 @@
     const base = cand <= first ? cand : new Date(first.getFullYear(), first.getMonth(), first.getDate() - 1, DAY_START_HOUR);
     const end = addHours(floorHour(last), 1);
     const n = Math.floor(Math.floor((end - base) / HOUR) / step);
-    const nSlots = Math.max(8, Math.min(maxCols, n + 1));
+    // лимит «Колонок» действует на всё окно вместе с запасом справа
+    const nSlots = Math.max(8, Math.min(maxCols, n + 1 + TAIL_SLOTS));
     return { base, end, step, nSlots };
   }
 
@@ -333,7 +335,7 @@
 
   const api = {
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN,
-    DAY_START_HOUR, MAX_TIMELINE_COLS, FIELD_ORDER, FIELD_TITLES, C,
+    DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, shortName, guessNowFromFilename,
     loadTasks, inferWindow, barColor, capacityColor, buildTimeline,
     fmtFull, fmtDMHM,

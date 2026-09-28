@@ -86,15 +86,15 @@
     const w = M.inferWindow(tasks, NOW, { step: 1, maxCols: 72 });
     eq(iso(w.base), '2026-9-14 4:0:0');
     eq(iso(w.end), '2026-9-14 13:0:0');
-    eq(w.nSlots, 10);
+    eq(w.nSlots, 16, '10 колонок данных + 6 запаса');
     const early = M.loadTasks(DATA.concat([['Ночная #9', 'Завершена', '14.09.26 02:30:00', '14.09.26 03:10:00', '', '', '', '', '']]), NOW).tasks;
     eq(iso(M.inferWindow(early, NOW, { step: 1, maxCols: 72 }).base), '2026-9-13 4:0:0', 'задача до 04:00 → 04:00 предыдущего дня');
     const far = d(2026, 9, 30);
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: 72 }).nSlots, 72);
-    eq(M.inferWindow(tasks, far, { step: 1, maxCols: Infinity }).nSlots, 382);
+    eq(M.inferWindow(tasks, far, { step: 1, maxCols: Infinity }).nSlots, 388);
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: 24 }).nSlots, 24);
     eq(M.inferWindow(tasks, far, { step: 1, maxCols: 48 }).nSlots, 48);
-    eq(M.inferWindow(tasks, NOW, { step: 1, maxCols: 24 }).nSlots, 10, 'данных меньше лимита');
+    eq(M.inferWindow(tasks, NOW, { step: 1, maxCols: 24 }).nSlots, 16, 'данных меньше лимита');
   });
 
   test('buildTimeline: интервалы, срок, загрузка', () => {
@@ -103,8 +103,8 @@
     eq([r0.startIdx, r0.endIdx, r0.dlIdx], [3, 5, 5], '07:59 → 09:23, срок 09:30');
     eq(tl.hourHeads.map(h => h.label).slice(0, 3), ['04', '05', '06']);
     eq(tl.dayGroups.length, 1);
-    eq(tl.capacity.map(c => c.count), [0, 0, 0, 1, 2, 2, 2, 2, 2, 0]);
-    eq(tl.subtitle.includes('14.09 04:00 → 14.09 14:00'), true);
+    eq(tl.capacity.map(c => c.count), [0, 0, 0, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0]);
+    eq(tl.subtitle.includes('14.09 04:00 → 14.09 20:00'), true);
   });
 
   test('buildTimeline: часы в цвет своего дня', () => {
@@ -118,7 +118,7 @@
 
   test('buildTimeline: шаг 2 ч', () => {
     const tl = M.buildTimeline(DATA, { now: NOW, step: 2 });
-    eq(tl.nSlots, 8);
+    eq(tl.nSlots, 11, '5 колонок данных + 6 запаса');
     eq([tl.rows[0].startIdx, tl.rows[0].endIdx], [1, 2]);
   });
 
