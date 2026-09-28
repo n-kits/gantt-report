@@ -39,6 +39,19 @@
     </div>
   </header>
 
+  <div id="live" class="live" hidden>
+    <span class="live-dot"></span>
+    <span id="live-text"></span>
+    <button id="live-refresh" class="live-btn" type="button">Обновить</button>
+    <button id="live-back" class="live-btn" type="button" hidden>Вернуться к живым данным</button>
+    <form id="live-pass" class="live-pass" hidden>
+      <label>Пароль для живых данных:
+        <input id="live-pass-input" type="password" autocomplete="current-password">
+      </label>
+      <button class="live-btn" type="submit">Открыть</button>
+      <span id="live-pass-msg" class="live-pass-msg"></span>
+    </form>
+  </div>
   <div class="sourcebar"><span id="source"></span></div>
   <div id="msg" class="msg" role="status"></div>
 
@@ -74,8 +87,10 @@
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="js/model.js"></script>
   <script src="js/sources/xlsx-source.js"></script>
+  <script src="js/sources/bitrix-tasks.js"></script>
   <script src="js/sources/html-source.js"></script>
   <script src="js/timeline.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/live.js"></script>
 </body>
 </html>

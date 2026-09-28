@@ -80,9 +80,10 @@
       state.rows = res.rows;
       state.sourceName = res.sourceName;
       state.kind = res.kind;
-      state.now = M.guessNowFromFilename(res.sourceName) || new Date();
+      state.now = (res.now && M.parseDt(res.now)) || M.guessNowFromFilename(res.sourceName) || new Date();
       showMsg('');
       rebuild();
+      if (root.GanttLive) root.GanttLive.onFileLoaded();
     } catch (e) {
       console.error(e);
       showMsg(`Не удалось прочитать «${file.name}»: ${e.message}`, 'error');
@@ -185,15 +186,16 @@
   restore();
   rebuild();
 
-  // точка входа для будущих источников (букмарклет Bitrix, API и т.п.)
+  // точка входа для других источников (живые данные Bitrix и т.п.)
   root.GanttApp = {
-    loadRows(rows, sourceName, now) {
+    loadRows(rows, sourceName, now, kind) {
       state.rows = rows;
       state.sourceName = sourceName || 'данные';
-      state.kind = 'external';
+      state.kind = kind || 'external';
       state.now = now || M.guessNowFromFilename(sourceName) || new Date();
-      showMsg('');
       rebuild();
     },
+    showMsg,
+    get kind() { return state.kind; },
   };
 })(window);

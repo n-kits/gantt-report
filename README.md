@@ -57,12 +57,16 @@ css/styles.css          оформление (палитра из gantt_report.p
 js/model.js             расчёт: разбор строк → задачи → окно → ячейки ленты (порт Python-логики)
 js/timeline.js          рендер таблицы и подсказки
 js/app.js               UI: загрузка, настройки, localStorage
+js/live.js              живые данные: загрузка, расшифровка, опрос раз в 5 мин
 js/sources/             адаптеры источников данных
   xlsx-source.js        .xlsx/.xls/.csv через SheetJS
-  html-source.js        HTML-страница списка задач Bitrix
+  html-source.js        сохранённая HTML-страница (Bitrix-список → bitrix-tasks.js)
+  bitrix-tasks.js       разбор списка задач Bitrix (и на сайте, и в сборщике)
 vendor/xlsx.full.min.js SheetJS 0.20.3 (Apache-2.0), локальная копия — работает без интернета
 tests/index.html        тесты модели (открыть в браузере)
 tools/gantt_report.py   исходный Python-генератор Excel-отчёта
+tools/collector/        сборщик живых данных (collect.py) и его самопроверка (selftest.py)
+tools/palette.py        подбор палитры исполнителей
 ```
 
 Каждый адаптер источника возвращает `{ rows, sourceName, kind }`, где `rows` — массив строк
@@ -80,27 +84,48 @@ window.GanttSources.push({
 
 Для источников не из файла (API, букмарклет) есть `GanttApp.loadRows(rows, sourceName, now)`.
 
-## Bitrix: задел на будущее
+## Живые данные из Bitrix
 
-`js/sources/html-source.js` уже разбирает HTML грида Bitrix (`table.main-grid-table`,
-ячейки `.main-grid-cell-content`, заголовки `.main-grid-head-title`) и выкидывает служебные
-колонки (чекбоксы, меню действий). Сейчас так можно загрузить **сохранённую страницу**
-списка задач (Ctrl+S → «Веб-страница, только HTML»).
+```
+[ПК со сборщиком] Планировщик Windows, раз в час
+  └─ tools/collector/collect.py: Playwright + Edge (свой профиль с входом в Bitrix)
+       → «ВСЕ КАРТЫ Р24» за последние 3 суток по регистрации
+       → js/sources/bitrix-tasks.js разбирает таблицу прямо в странице
+       → шифрует (AES-GCM, ключ PBKDF2 из общего пароля) → push в ветку data (один коммит, без истории)
+[Страница] читает raw.githubusercontent.com/…/data/live.json раз в 5 минут,
+           расшифровывает паролем (вводится один раз) и перестраивает ленту
+```
 
-Возможные следующие шаги:
+Данные в публичном репозитории только зашифрованные; открыто лежат лишь служебные поля
+(время, статус сборщика, число задач).
 
-1. **Букмарклет / расширение** на странице Bitrix: запускает `GanttHtml.parseHtml(document)`
-   на живой странице и передаёт строки в эту страницу (`postMessage` или `localStorage`
-   на общем домене) → `GanttApp.loadRows(...)`. Авторизация остаётся в браузере пользователя,
-   CORS не мешает.
-2. **Серверный парсер** (если нужно по расписанию): отдельный скрипт логинится в Bitrix,
-   забирает страницу, прогоняет тот же разбор и складывает JSON рядом со страницей.
+### Установка сборщика (один раз, на ПК, который будет включён)
 
-Важно: грид Bitrix показывает только видимые колонки и текущую страницу пагинации —
-в настройках грида нужно включить все 9 колонок и поставить достаточный размер страницы.
+```bash
+python -m pip install playwright cryptography
+python tools/collector/collect.py --setup         # пароль для коллег, интервал (по умолчанию 60 мин)
+python tools/collector/collect.py --login         # окно Edge: войти в Bitrix, «Запомнить меня»
+python tools/collector/collect.py --dry-run -v    # проверка без публикации
+python tools/collector/collect.py -v              # первая публикация
+python tools/collector/collect.py --install-task  # запуск по расписанию
+```
+
+Настройки, профиль Edge и журнал — в `%LOCALAPPDATA%\gantt-collector`
+(`config.json`, `collector.log`). Интервал меняется в `config.json` → `interval_min`,
+затем повторить `--install-task`.
+
+Если сессия Bitrix истекла, сборщик публикует статус «нужен вход» (страница покажет
+предупреждение и последние удачные данные) — достаточно снова выполнить `--login`.
+
+### Разбор страницы
+
+`js/sources/bitrix-tasks.js` работает с таблицей `#task-list-table`: колонки — по заголовкам,
+регистрация и крайний срок — из скрытых полей, «Сегодня»/«Вчера» в завершении — по
+`SERVER_TIME` страницы. Этот же файл на сайте читает сохранённую страницу `.html`.
 
 ## Тесты
 
-Открыть `tests/index.html` (через локальный сервер или напрямую). Логика сверена с
+Открыть `tests/index.html` через локальный сервер (тестам Bitrix нужен fetch фикстуры).
+Самопроверка сборщика (Playwright + Edge, без Bitrix): `python tools/collector/selftest.py`. Логика сверена с
 Python-скриптом на реальной выгрузке: все 74 задачи × 72 колонки, цвета, отметки срока
 и строка «Одновременно в работе» совпадают с листом «Лента времени».

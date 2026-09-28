@@ -156,11 +156,16 @@
       const cells = tr.cells;
       rows.push(ORDER.map(f => (f in col ? cellValue(f, cells[col[f]], now) : '')));
     }
+    // Постраничный вывод: активна ссылка «Следующая» — значит, задачи не все
+    const next = Array.from(doc.querySelectorAll('#tasks-list-navigation-footer .pagination li'))
+      .find(li => /следующая/i.test(li.textContent.replace(/[CС]ледующая/, 'Следующая')));
+    const hasNextPage = !!next && !next.classList.contains('disabled');
     return {
       rows,
       now: now ? fmt(now.y, now.mo, now.d, now.h, now.mi, now.s) : null,
       count: rows.length,
       columns: Object.keys(col),
+      hasNextPage,
     };
   }
 

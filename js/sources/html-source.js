@@ -60,6 +60,11 @@
     async read(file) {
       const text = await file.text();
       const doc = new DOMParser().parseFromString(text, 'text/html');
+      // сохранённая страница списка задач Bitrix (vizart) — свой разборщик
+      if (root.GanttBitrix && doc.querySelector('table#task-list-table')) {
+        const res = root.GanttBitrix.parseBitrixTasks(doc);
+        return { rows: res.rows, now: res.now, sourceName: file.name, kind: 'bitrix' };
+      }
       return { rows: parseHtml(doc), sourceName: file.name, kind: this.id };
     },
   };

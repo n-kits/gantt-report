@@ -70,6 +70,14 @@
     try { B.parseBitrixTasks(parse('<p>пусто</p>')); throw new Error('не упало'); } catch (e) { eq(e.code, 'NO_TABLE'); }
   });
 
+  await test('постраничный вывод распознаётся', () => {
+    eq(res.hasNextPage, false);
+    const footer = on => `<div id="tasks-list-navigation-footer"><ul class="pagination">
+      <li class="active"><a>1</a></li><li${on ? '' : ' class="disabled"'}><a>Cледующая &raquo;</a></li></ul></div>`;
+    eq(B.parseBitrixTasks(parse(html.replace('</body>', footer(false) + '</body>'))).hasNextPage, false);
+    eq(B.parseBitrixTasks(parse(html.replace('</body>', footer(true) + '</body>'))).hasNextPage, true);
+  });
+
   await test('колонки по заголовкам, а не по порядку', () => {
     const doc = parse(html);
     const table = doc.querySelector('#task-list-table');
