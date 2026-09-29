@@ -32,7 +32,7 @@
     green: '#2E7D4F', green_bg: '#D8EDE0', orange: '#C47A16', orange_bg: '#F8E6C8',
     blue: '#2B6CB0', blue_bg: '#D6E6F5', red: '#B42318', red_bg: '#F8D7D3',
     gray: '#6B7280', gray_bg: '#EEECE6', gold: '#C9A227', light: '#FAF8F3', alt: '#F0EBE1',
-    violet: '#6B21A8', violet_bg: '#E2D6F3',
+    violet: '#6B21A8', violet_bg: '#D8C8EE',
     // полосы «на рассмотрении»: чуть насыщеннее фонов плашек, чтобы не сливаться с пустыми ячейками
     review_bar: '#C4E3CF', review_late_bar: '#F3C6C0',
   };
@@ -43,6 +43,7 @@
   const BAR_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.review_bar, [STATUS_RUN]: C.blue };
   // «◆» на светлых полосах — тёмный в тон полосе; на насыщенных — белый
   const BAR_MARK = { [C.review_bar]: C.green, [C.review_late_bar]: C.red, [C.violet_bg]: C.violet };
+  const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
   // 16 цветов исполнителей — подобраны расчётом (tools/palette.py): максимум минимального
   // ΔE2000 между любыми двумя цветами (≥ 12.9) при контрасте ≥ 4.5 на фоне строки и
   // подсветки, светлоте L* ≥ 30, насыщенности 25 ≤ C* ≤ 70 и ΔE ≥ 20 до цветов статусов.
@@ -242,6 +243,12 @@
     return BAR_COLOR[t.status] || C.gray;
   }
 
+  // Обводка полосы «на рассмотрении» — цвет, которым она станет после завершения
+  function barOutline(t) {
+    if (t.status !== STATUS_REVIEW) return null;
+    return t.late ? C.red : C.green;
+  }
+
   function barMarkColor(bar) {
     return BAR_MARK[bar] || C.white;
   }
@@ -280,7 +287,7 @@
     hours.forEach((h, i) => {
       const key = fmtDate(h);
       const g = dayGroups[dayGroups.length - 1];
-      if (!g || g.label !== key) dayGroups.push({ label: key, from: i, to: i });
+      if (!g || g.label !== key) dayGroups.push({ label: key, weekday: WEEKDAYS[h.getDay()], from: i, to: i });
       else g.to = i;
     });
     dayGroups.forEach((g, gi) => { g.color = DAY_PALETTE[gi % DAY_PALETTE.length]; });
@@ -311,6 +318,7 @@
         task: t,
         barColor: barColor(t),
         barMark: barMarkColor(barColor(t)),
+        barOutline: barOutline(t),
         execShort: t.executor ? t.executor.split(/\s+/)[0] : '—',
         execColor: execColors.get(t.executor) || '#1F2937',
         statusColor: STATUS_COLOR[t.status] || C.gray,
@@ -350,7 +358,7 @@
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, shortName, guessNowFromFilename,
-    loadTasks, inferWindow, barColor, capacityColor, buildTimeline,
+    loadTasks, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
     fmtFull, fmtDMHM,
   };
   root.GanttModel = api;

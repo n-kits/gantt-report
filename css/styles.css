@@ -205,8 +205,15 @@ table.tl {
 .tl tr.task:hover td.fz { background: #EFE9DC; }
 .tl tr.task:hover td.s:not(.on):not(.dl) { background: #EFEAE0; }
 
+/* обводка полос «на рассмотрении» цветом, которым они станут после завершения (--ol) */
+.tl td.s.ol { --ol-sh: inset 0 1px 0 var(--ol), inset 0 -1px 0 var(--ol); box-shadow: var(--ol-sh); }
+.tl td.s.ol.ol-l { --ol-sh: inset 0 1px 0 var(--ol), inset 0 -1px 0 var(--ol), inset 1px 0 0 var(--ol); }
+.tl td.s.ol.ol-r { --ol-sh: inset 0 1px 0 var(--ol), inset 0 -1px 0 var(--ol), inset -1px 0 0 var(--ol); }
+.tl td.s.ol.ol-l.ol-r { --ol-sh: inset 0 0 0 1px var(--ol); }
+
 /* подсветка часовой колонки: затемнение поверх любого фона (пусто, полоса, срок) */
 .tl td.col-hl { box-shadow: inset 0 0 0 999px rgba(15, 44, 58, .10); }
+.tl td.s.ol.col-hl { box-shadow: var(--ol-sh), inset 0 0 0 999px rgba(15, 44, 58, .10); }
 .tl .h-hours th.col-hl { box-shadow: inset 0 -3px 0 #fff; filter: brightness(1.35); }
 
 /* текущий час: оранжевые линии по краям колонки и лёгкая заливка поверх любого фона */

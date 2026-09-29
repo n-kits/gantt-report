@@ -75,7 +75,7 @@
     eq(byId['101'].late, true);
     eq(M.barColor(byId['101']), '#B42318');
     eq(byId['102'].late, true, 'выполняется после срока');
-    eq(M.barColor(byId['102']), '#E2D6F3', 'выполняется, срок прошёл — светло-фиолетовый');
+    eq(M.barColor(byId['102']), '#D8C8EE', 'выполняется, срок прошёл — светло-фиолетовый');
     eq(byId['103'].late, false);
     eq(M.barColor(byId['103']), '#C4E3CF', 'на рассмотрении в срок — светло-зелёный');
     eq(iso(byId['103'].actualEnd), iso(NOW));
@@ -87,10 +87,12 @@
     const mark = id => tl.rows.find(r => r.task.id === id);
     eq([mark('104').barColor, mark('104').barMark], ['#F3C6C0', '#B42318'], 'светло-красная, красный ◆');
     eq([mark('103').barColor, mark('103').barMark], ['#C4E3CF', '#2E7D4F'], 'светло-зелёная, зелёный ◆');
-    eq([mark('102').barColor, mark('102').barMark], ['#E2D6F3', '#6B21A8'], 'светло-фиолетовая, фиолетовый ◆');
+    eq([mark('102').barColor, mark('102').barMark], ['#D8C8EE', '#6B21A8'], 'светло-фиолетовая, фиолетовый ◆');
     eq([mark('100').barColor, mark('100').barMark], ['#2E7D4F', '#FFFFFF'], 'насыщенная — белый ◆');
     eq([mark('100').statusColor, mark('100').statusBg], ['#FFFFFF', '#2E7D4F'], 'плашка «Завершена»');
     eq([mark('103').statusColor, mark('103').statusBg], ['#2E7D4F', '#D8EDE0'], 'плашка «На рассмотрении»');
+    eq([mark('103').barOutline, mark('104').barOutline, mark('100').barOutline, mark('102').barOutline],
+      ['#2E7D4F', '#B42318', null, null], 'обводка — только у «на рассмотрении», цветом будущего статуса');
   });
 
   test('inferWindow: ось с 04:00, минимум 8 колонок, лимит 72', () => {
@@ -126,6 +128,20 @@
       for (let i = g.from; i <= g.to; i++) eq(tl.hourHeads[i].color, g.color, `час ${i}`);
     });
     eq(tl.dayGroups[0].color !== tl.dayGroups[1].color, true);
+  });
+
+  test('buildTimeline: день недели в шапке дней', () => {
+    const tl = M.buildTimeline(DATA, { now: d(2026, 9, 15, 6, 0), step: 1 });
+    eq(tl.dayGroups.map(g => [g.label, g.weekday]), [['14.09.2026', 'пн'], ['15.09.2026', 'вт']]);
+    const html = window.GanttTimeline.render(tl);
+    eq(html.includes('>пн, 14.09.2026<') && html.includes('>вт, 15.09.2026<'), true);
+  });
+
+  test('длительность в подсказке: больше суток — «X дн Y ч»', () => {
+    const T = window.GanttTimeline;
+    eq([T.fmtHours(1.44), T.fmtHours(23.9), T.fmtHours(24), T.fmtHours(25.4), T.fmtHours(138.3), T.fmtHours(48)],
+      ['1.4 ч', '23.9 ч', '24.0 ч', '1 дн 1 ч', '5 дн 18 ч', '2 дн 0 ч']);
+    eq([T.fmtDelta(0.5), T.fmtDelta(-30), T.fmtDelta(0.004)], ['30 мин', '1 дн 6 ч', null]);
   });
 
   test('buildTimeline: шаг 2 ч', () => {

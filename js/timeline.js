@@ -26,7 +26,8 @@
     out.push('<thead><tr class="h-days">');
     out.push('<th class="fz fz-all" colspan="4">Задача</th>');
     for (const g of tl.dayGroups) {
-      out.push(`<th colspan="${g.to - g.from + 1}" style="background:${g.color}">${esc(g.label)}</th>`);
+      const text = g.weekday ? `${g.weekday}, ${g.label}` : g.label;
+      out.push(`<th colspan="${g.to - g.from + 1}" style="background:${g.color}">${esc(text)}</th>`);
     }
     out.push('</tr><tr class="h-hours">');
     out.push('<th class="fz fz1">ID</th><th class="fz fz2">Задача</th><th class="fz fz3">Исп.</th><th class="fz fz4">Статус</th>');
@@ -46,7 +47,11 @@
         const on = r.startIdx != null && r.startIdx <= h && h <= r.endIdx;
         const dl = r.dlIdx === h;
         if (on) {
-          out.push(`<td class="s on" style="background:${r.barColor};color:${r.barMark}">${dl ? '◆' : ''}</td>`);
+          // обводка «будущим» цветом: верх/низ у всех ячеек, бока — у первой и последней
+          const ol = r.barOutline
+            ? ` ol${h === r.startIdx ? ' ol-l' : ''}${h === r.endIdx ? ' ol-r' : ''}` : '';
+          const olVar = r.barOutline ? `;--ol:${r.barOutline}` : '';
+          out.push(`<td class="s on${ol}" style="background:${r.barColor};color:${r.barMark}${olVar}">${dl ? '◆' : ''}</td>`);
         } else if (dl) {
           out.push('<td class="s dl">◆</td>');
         } else {
@@ -66,15 +71,20 @@
     return out.join('');
   }
 
-  // Отклонение от срока: меньше часа — в минутах, до суток — в часах,
-  // больше суток — «X дн Y ч». null — меньше минуты.
+  // Часы: до суток — «N.N ч», больше суток — «X дн Y ч»
+  function fmtHours(hours) {
+    const h = Math.abs(hours);
+    if (h <= 24) return `${h.toFixed(1)} ч`;
+    const totalH = Math.round(h);
+    return `${Math.floor(totalH / 24)} дн ${totalH % 24} ч`;
+  }
+
+  // Отклонение от срока: меньше часа — в минутах, дальше — как fmtHours. null — меньше минуты.
   function fmtDelta(hours) {
     const min = Math.round(Math.abs(hours) * 60);
     if (min < 1) return null;
     if (min < 60) return `${min} мин`;
-    if (min <= 24 * 60) return `${(min / 60).toFixed(1)} ч`;
-    const totalH = Math.round(min / 60);
-    return `${Math.floor(totalH / 24)} дн ${totalH % 24} ч`;
+    return fmtHours(min / 60);
   }
 
   function tooltipHtml(r) {
@@ -98,7 +108,7 @@
         <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}</td></tr>
         <tr><th>Завершение</th><td>${finish}</td></tr>
         <tr><th>Крайний срок</th><td>${M.fmtFull(t.deadline)}</td></tr>
-        <tr><th>Длительность</th><td>${t.durationH.toFixed(1)} ч</td></tr>
+        <tr><th>Длительность</th><td>${fmtHours(t.durationH)}</td></tr>
       </table>`;
   }
 
@@ -122,5 +132,5 @@
     return out.filter(Boolean);
   }
 
-  root.GanttTimeline = { render, tooltipHtml, slotIndex, columnCells };
+  root.GanttTimeline = { render, tooltipHtml, slotIndex, columnCells, fmtHours, fmtDelta };
 })(window);
