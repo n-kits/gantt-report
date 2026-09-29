@@ -27,6 +27,7 @@ log = logging.getLogger("collector")
 HERE = Path(__file__).resolve().parent
 BASEMAP_PATH = HERE.parent.parent / "data" / "basemap.json"
 
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 MAX_TEXT = 4000            # символов описания в LLM
 BATCH_SIZE = 8             # задач в одном запросе
 KEEP_DAYS = 7              # сколько помнить задачи, пропавшие из выборки
@@ -227,7 +228,10 @@ def norm(s: str) -> str:
 
 
 class GeoCache:
-    """Кэш геокодирования {название: [lat, lon] | null}, совместим с geocode_tasks.py."""
+    """
+    Кэш геокодирования {название: [lat, lon] | null}, совместим с geocode_tasks.py.
+    Найденное Nominatim хранится как [lat, lon, "nominatim"] — чтобы было видно, откуда точка.
+    """
 
     def __init__(self, path: Path):
         self.path = path
@@ -286,11 +290,14 @@ def analyze(tasks: list[dict], cfg: dict) -> dict:
     for i in range(0, len(tasks), BATCH_SIZE):
         batch = tasks[i:i + BATCH_SIZE]
         body = "\n\n".join(f"--- Заказ ID: {t['id']} ---\nНазвание: {t['name']}\n{t['text'][:MAX_TEXT]}" for t in batch)
+        model = cfg.get("llm_model", "claude-opus-5-5")
+        # при отказе классификатора сервер сам повторит запрос на другой модели
+        # (параметр есть не у всех моделей)
+        fb = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if model in FALLBACK_MODELS else {}
         resp = client.beta.messages.create(
-            model=cfg.get("llm_model", "claude-opus-5-5"),
+            model=model,
             max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **fb,
             output_config={"effort": cfg.get("llm_effort", "medium"),
                            "format": {"type": "json_schema", "schema": SCHEMA}},
             system=SYSTEM_PROMPT,
@@ -347,7 +354,7 @@ class Geocoder:
         kind = t.get("kind") or "other"
         iso = (t.get("country") or "").upper()
         if kind == "country" and iso in self.countries:
-            return {"name": name, "kind": "country", "iso": iso}
+            return {"name": name, "kind": "country", "iso": iso, "_src": "basemap"}
 
         est = [t["lat"], t["lon"]] if isinstance(t.get("lat"), (int, float)) and isinstance(t.get("lon"), (int, float)) else None
         tol = TOLERANCE_KM.get(kind, 500)
@@ -357,8 +364,8 @@ class Geocoder:
 
         for k in keys:                                   # 1. кэш
             found, c = self.cache.get(k)
-            if found and ok(c):
-                return self._point(name, kind, c)
+            if found and c and ok(c[:2]):
+                return self._point(name, kind, c[:2], c[2] if len(c) > 2 else "cache")
         query = (t.get("query") or "").strip()
         asked = False
         if query:                                        # 2. Nominatim (ответ, даже пустой, кэшируется)
@@ -372,16 +379,16 @@ class Geocoder:
                 cands = sorted(cands, key=lambda c: km(c, est))
             c = cands[0] if cands else None
             if ok(c):
-                self.cache.put(keys[0], c)
-                return self._point(name, kind, c)
+                self.cache.put(keys[0], c + ["nominatim"])
+                return self._point(name, kind, c, "nominatim")
         # 3. оценка модели; в журнал — только впервые (когда спрашивали Nominatim в этот раз)
         if asked or not query:
             self.unresolved.append(f"{name}; {macro}; {query}; {est[0] if est else ''}; {est[1] if est else ''}")
-        return self._point(name, kind, est, approx=True) if est else None
+        return self._point(name, kind, est, "llm", approx=True) if est else None
 
     @staticmethod
-    def _point(name, kind, c, approx=False):
-        p = {"name": name, "kind": kind, "lat": c[0], "lon": c[1]}
+    def _point(name, kind, c, src, approx=False):
+        p = {"name": name, "kind": kind, "lat": c[0], "lon": c[1], "_src": src}
         if approx:
             p["approx"] = True
         return p
@@ -449,7 +456,7 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
 
     cache = GeoCache(app_dir / "geocache.json")
     coder = Geocoder(cache)
-    items = []
+    items, review = [], []
     today = datetime.now().date().isoformat()
     for row, t in zip(res["rows"], res.get("tasks", [])):
         st = state["tasks"].get(t["id"])
@@ -457,10 +464,16 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
             continue
         st["seen"] = today
         r = st.get("result") or {}
-        tops = [p for p in (coder.resolve(x) for x in r.get("toponyms", [])) if p]
+        pairs = [(x, coder.resolve(x)) for x in r.get("toponyms", [])]
+        tops = [{k: v for k, v in p.items() if not k.startswith("_")} for _, p in pairs if p]
         items.append({"id": t["id"], "start": row[2], "themes": r.get("themes", []),
                       "conflict": r.get("conflict", ""), "sentiment": r.get("sentiment", ""), "toponyms": tops})
+        # локальный разбор для проверки глазами (geo-review.json, не публикуется)
+        review.append({"id": t["id"], "name": row[0], "start": row[2], "project": row[6], "product": row[7],
+                       "themes": r.get("themes", []), "conflict": r.get("conflict", ""), "sentiment": r.get("sentiment", ""),
+                       "toponyms": [dict(llm=x, got=p) for x, p in pairs]})
     cache.save()
+    _save_json(app_dir / "geo-review.json", {"now": res.get("now"), "model": cfg.get("llm_model"), "items": review})
 
     cutoff = (datetime.now() - timedelta(days=KEEP_DAYS)).date().isoformat()
     state["tasks"] = {k: v for k, v in state["tasks"].items() if v.get("seen", today) >= cutoff}

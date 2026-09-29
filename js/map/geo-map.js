@@ -12,18 +12,30 @@
   const G = root.GanttGeo;
   const BASEMAP_URL = 'data/basemap.json';
 
+  // Цвета — CSS-переменные --map-* (css/styles.css, блок «Карта топонимов»); здесь запасные.
   const COLORS = {
     sea: '#E6EDF1',
     land: '#FAF8F3',
     border: '#C9C3B6',
-    today: '#C45C26',        // акцент сайта
-    old: '#8A919C',          // нейтральный «неактивный»
+    outline: '#C9C3B6',
+    today: '#C45C26',
+    old: '#8A919C',
+    oldOpacity: 0.75,
     halo: '#FFFFFF',
+    hover: '#1F2937',
     countryToday: 'rgba(196, 92, 38, .30)',
     countryTodayLine: 'rgba(196, 92, 38, .75)',
     countryOld: 'rgba(107, 114, 128, .12)',
   };
   const PULSE_MS = 2400;
+
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of Object.keys(COLORS)) {
+      const v = cs.getPropertyValue('--map-' + k.replace(/[A-Z]/g, m => '-' + m.toLowerCase())).trim();
+      if (v) COLORS[k] = typeof COLORS[k] === 'number' ? parseFloat(v) : v;
+    }
+  }
 
   // --- проекция (как в ships_routes_map) ------------------------------------
   function rawNE(lon, lat) {
@@ -207,7 +219,7 @@
       if (e) { ctx.lineWidth = 2 / k; ctx.strokeStyle = COLORS.today; ctx.stroke(e.path); }
     }
     ctx.lineWidth = 1 / k;
-    ctx.strokeStyle = COLORS.border;
+    ctx.strokeStyle = COLORS.outline;
     ctx.stroke(basemap.outline);
   }
 
@@ -233,7 +245,7 @@
         ctx.beginPath(); ctx.arc(sx, sy, r * (1 + 1.6 * e), 0, 2 * Math.PI); ctx.fill();
         ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = p.today ? 1 : 0.75;
+      ctx.globalAlpha = p.today ? 1 : COLORS.oldOpacity;
       ctx.fillStyle = color;
       ctx.strokeStyle = COLORS.halo;
       ctx.lineWidth = 1.5;
@@ -244,7 +256,7 @@
       }
       ctx.globalAlpha = 1;
       if (hover && hover.key === p.key) {
-        ctx.strokeStyle = '#1F2937'; ctx.lineWidth = 2;
+        ctx.strokeStyle = COLORS.hover; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(sx, sy, r + 3, 0, 2 * Math.PI); ctx.stroke();
       }
     }
@@ -370,6 +382,7 @@
     show(geo, now) {
       lastGeo = geo || null;
       if (!geo) { el.box.hidden = true; return; }
+      readColors();
       el.box.hidden = false;
       setData(geo, now || new Date());
       resize();
