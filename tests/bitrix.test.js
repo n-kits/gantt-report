@@ -89,6 +89,60 @@
     eq(r.rows[0].slice(1, 3), ['Завершена', '26.09.2026 12:03:00']);
   });
 
+  await test('ID и ссылка задачи; без колонки «Описание» — пустое превью', () => {
+    eq(res.tasks.length, res.count);
+    eq(/^\d+$/.test(res.tasks[0].id), true);
+    eq(/\/tasks\/task\/view\/\d+\/$/.test(res.tasks[0].url), true, res.tasks[0].url);
+    eq(res.tasks[0].description, '');
+  });
+
+  await test('колонка «Описание»: превью с переносами строк', () => {
+    const doc = parse(html);
+    const table = doc.querySelector('#task-list-table');
+    const th = doc.createElement('th');
+    th.textContent = 'Описание';
+    table.tHead.rows[0].appendChild(th);
+    for (const tr of table.querySelectorAll('tbody tr.task-list-item')) {
+      const td = doc.createElement('td');
+      td.className = 'emg-task-description-preview';
+      td.textContent = '\n      Дата монтажа: 27.09.2026 19:00 \nЗаголовок:  Прогноз   \nМосква, Сочи...   ';
+      tr.appendChild(td);
+    }
+    const r = B.parseBitrixTasks(doc);
+    eq(r.columns.includes('description'), true);
+    eq(r.rows[0].length, 9, 'строки ленты не меняются');
+    eq(r.tasks[0].description, 'Дата монтажа: 27.09.2026 19:00\nЗаголовок: Прогноз\nМосква, Сочи...');
+  });
+
+  // --- карта топонимов (js/map/geo-model.js) ---
+  const G = window.GanttGeo;
+  const at = (d, h, mi) => new Date(2026, 8, d, h, mi || 0);
+  await test('карта: «сегодня» начинается в 04:00', () => {
+    eq(G.dayStart(at(28, 22)).getTime(), at(28, 4).getTime());
+    eq(G.dayStart(at(29, 3, 59)).getTime(), at(28, 4).getTime(), 'до 04:00 — ещё вчерашние сутки');
+    eq(G.dayStart(at(29, 4)).getTime(), at(29, 4).getTime());
+  });
+
+  await test('карта: одинаковые топонимы сливаются, размер по числу задач', () => {
+    const msk = { name: 'Москва', kind: 'settlement', lat: 55.7558, lon: 37.6173 };
+    const geo = { items: [
+      { id: '1', start: '28.09.2026 10:00:00', toponyms: [msk, { name: 'Украина', kind: 'country', iso: 'UKR' }] },
+      { id: '2', start: '27.09.2026 10:00:00', toponyms: [Object.assign({}, msk, { name: 'москва', lat: 55.76 }), msk] },
+      { id: '3', start: '27.09.2026 11:00:00', toponyms: [{ name: 'Чёрное море', kind: 'water', lat: 43.4, lon: 34, approx: true },
+        { name: 'Украина', kind: 'country', iso: 'UKR' }, { name: 'Без координат', kind: 'other' }] },
+      { id: '4', start: '28.09.2026 03:00:00', toponyms: [{ name: 'Сочи', kind: 'settlement', lat: 43.58, lon: 39.72 }] },
+    ] };
+    const a = G.aggregate(geo, at(28, 22));
+    const byName = Object.fromEntries(a.points.map(p => [p.name, p]));
+    eq([byName['Москва'].count, byName['Москва'].today], [2, true], 'дубль в одной задаче считается один раз');
+    eq([byName['Чёрное море'].today, byName['Чёрное море'].approx], [false, true]);
+    eq(byName['Сочи'].today, false, '03:00 — ещё вчера');
+    eq(a.points.length, 3, 'без координат — пропуск');
+    eq(a.countries.map(c => [c.iso, c.count, c.today]), [['UKR', 2, true]]);
+    eq(a.points[a.points.length - 1].today, true, 'сегодняшние рисуются последними (сверху)');
+    eq([G.radius(1), G.radius(4) > G.radius(2), G.radius(1000)], [4, true, 16]);
+  });
+
   const out = document.getElementById('out');
   const ok = results.filter(r => r.ok).length;
   out.innerHTML = `<h2 class="${ok === results.length ? 'pass' : 'fail'}">${ok} / ${results.length} пройдено</h2>` +

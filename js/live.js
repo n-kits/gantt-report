@@ -110,7 +110,9 @@
       return;
     }
     shownKey = envelope.dataAt;
-    App.loadRows(payload.rows, payload.sourceName || envelope.source, M.parseDt(payload.now) || new Date(envelope.dataAt), 'live');
+    const now = M.parseDt(payload.now) || new Date(envelope.dataAt);
+    App.loadRows(payload.rows, payload.sourceName || envelope.source, now, 'live');
+    if (root.GanttMap) root.GanttMap.show(payload.geo || null, now);
     App.showMsg(...statusMessage(envelope));
   }
 
@@ -151,6 +153,7 @@
     onFileLoaded() {
       if (!envelope) return;
       store.set(OFF_KEY, '1');
+      if (root.GanttMap) root.GanttMap.hide();
       App.showMsg('');
       renderBar();
     },

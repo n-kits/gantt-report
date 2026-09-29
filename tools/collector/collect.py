@@ -10,9 +10,11 @@
     python collect.py --dry-run        # сбор без публикации, результат в last-payload.json
     python collect.py --install-task   # зарегистрировать задачу в Планировщике Windows
     python collect.py --remove-task    # удалить задачу
+    python collect.py --import-geocache in/analyze_geocode/geocache.geojson   # заполнить кэш координат
 
 Всё локальное (настройки, профиль Edge, журнал) — в %LOCALAPPDATA%\\gantt-collector.
 Зависимости: playwright, cryptography; браузер — установленный Microsoft Edge.
+Карта топонимов (geo.py): anthropic, geopy; ключ — переменная окружения ANTHROPIC_API_KEY.
 """
 from __future__ import annotations
 
@@ -56,6 +58,10 @@ DEFAULTS = {
     "data_file": "live.json",
     "kdf_iterations": 250000,
     "password": None,           # пароль шифрования для коллег (задаётся --setup)
+    "geo": True,                # карта топонимов: анализ описаний через Claude + геокодирование
+    "llm_model": "claude-opus-5-5",
+    "llm_effort": "medium",
+    "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
 }
 
 log = logging.getLogger("collector")
@@ -186,7 +192,7 @@ def parse_page(page) -> dict:
     return res
 
 
-def fetch_tasks(cfg: dict) -> dict:
+def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
     from playwright.sync_api import sync_playwright
 
     now = bitrix_now(cfg)
@@ -216,6 +222,13 @@ def fetch_tasks(cfg: dict) -> dict:
                 raise CollectError("PAGINATED", "Список разбит на страницы — включите «показать все» в Bitrix")
             res["range"] = {"from": fmt_bx(frm), "to": fmt_bx(to)}
             log.info("Задач: %s, диапазон %s — %s, время Bitrix %s", res["count"], *res["range"].values(), res["now"])
+            if geo_state is not None:
+                # полные описания новых задач — пока открыт браузер с сессией Bitrix
+                import geo
+                res["geo_todo"] = geo.pending(geo_state, res)
+                geo.fetch_texts(ctx, page.url, res["geo_todo"], cfg["geo_fetch_limit"])
+                if res["geo_todo"]:
+                    log.info("Карта: новых/изменённых задач %s", len(res["geo_todo"]))
             return res
         finally:
             ctx.close()
@@ -304,8 +317,18 @@ def run(cfg: dict, dry_run: bool) -> int:
     code = 0
     try:
         with Lock():
-            res = fetch_tasks(cfg)
+            geo_state = load_geo_state() if cfg.get("geo") else None
+            res = fetch_tasks(cfg, geo_state)
+            geo_part = None
+            if geo_state is not None:
+                try:
+                    import geo
+                    geo_part = geo.build(APP_DIR, cfg, res, res.get("geo_todo", []))
+                except Exception:  # noqa: BLE001 — без карты лента всё равно публикуется
+                    log.exception("Карта топонимов не собрана")
         payload = {"rows": res["rows"], "now": res["now"], "range": res["range"], "sourceName": cfg["source_name"]}
+        if geo_part is not None:
+            payload["geo"] = geo_part
         envelope.update({
             "status": "ok", "message": "", "count": res["count"], "range": res["range"], "bitrixNow": res["now"],
             "dataAt": envelope["generatedAt"], "enc": encrypt(payload, cfg["password"], cfg["kdf_iterations"]),
@@ -341,6 +364,13 @@ def run(cfg: dict, dry_run: bool) -> int:
         log.error("%s: %s", e.code, e)
         return 1
     return code
+
+
+def load_geo_state() -> dict:
+    try:
+        return json.loads((APP_DIR / "geo-state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"tasks": {}}
 
 
 def setup(cfg: dict) -> None:
@@ -384,6 +414,7 @@ def main(argv=None) -> int:
     g.add_argument("--login", action="store_true", help="войти в Bitrix в окне Edge")
     g.add_argument("--install-task", action="store_true", help="добавить в Планировщик Windows")
     g.add_argument("--remove-task", action="store_true", help="удалить из Планировщика")
+    g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -398,6 +429,11 @@ def main(argv=None) -> int:
         return 0
     if args.install_task:
         install_task(cfg)
+        return 0
+    if args.import_geocache:
+        import geo
+        n = geo.GeoCache(APP_DIR / "geocache.json").import_geojson(Path(args.import_geocache))
+        print(f"В кэш координат добавлено: {n}")
         return 0
     if args.remove_task:
         subprocess.run(["schtasks", "/Delete", "/F", "/TN", TASK_NAME], check=False)

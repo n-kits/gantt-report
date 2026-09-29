@@ -116,7 +116,7 @@ window.GanttSources.push({
 ### Установка сборщика (один раз, на ПК, который будет включён)
 
 ```bash
-python -m pip install playwright cryptography
+python -m pip install playwright cryptography anthropic geopy
 python tools/collector/collect.py --setup         # пароль для коллег, интервал (по умолчанию 30 мин)
 python tools/collector/collect.py --login         # окно Edge: войти в Bitrix, «Запомнить меня»
 python tools/collector/collect.py --dry-run -v    # проверка без публикации
@@ -131,6 +131,33 @@ python tools/collector/collect.py --install-task  # запуск по распи
 
 Если сессия Bitrix истекла, сборщик публикует статус «нужен вход» (страница покажет
 предупреждение и последние удачные данные) — достаточно снова выполнить `--login`.
+
+### Карта топонимов (только живые данные)
+
+Под лентой — карта мест из заказов за те же три дня. Сегодняшние (с 04:00) точки пульсируют,
+вчерашние и позавчерашние — серые; размер точки растёт с числом задач, страны подсвечиваются
+полигоном. Колесо мыши — масштаб, перетаскивание — сдвиг.
+
+```
+collect.py (тот же запуск)
+  → колонка «Описание» в списке задач (превью, Bitrix обрезает до ~200 символов)
+  → для новых/изменённых задач — полный текст со страницы задачи (#textDescriptionBlock)
+  → tools/collector/geo.py: Claude (structured output) — тема, конфликт, тональность,
+    топонимы с макрорегионом, кодом страны и оценкой координат
+  → координаты: кэш (geocache.json) → Nominatim по запросу с макрорегионом → оценка модели
+    (сверка: точка из кэша/Nominatim дальше допуска от оценки модели — отбрасывается)
+  → раздел geo в зашифрованном live.json (без текстов описаний)
+```
+
+- В Bitrix колонка «Описание» ставится **последней** — выгрузка xlsx читается по позициям.
+- Ключ: переменная окружения `ANTHROPIC_API_KEY`; модель и глубина — `llm_model`, `llm_effort`
+  в `config.json`; выключить карту — `"geo": false`.
+- Кэш координат заполняется один раз: `python tools/collector/collect.py --import-geocache <файл.geojson>`.
+- Не найденные геокодером места (показаны по оценке модели, пунктирный ободок) — в
+  `geo-unresolved.log`; поправить можно в `geocache.json` (`"Название (Регион)": [широта, долгота]`).
+- Подложка `data/basemap.json` собирается из полигонов стран: `python tools/build_basemap.py <страны.geojson>`.
+- Тестовые данные с картой: `python tools/collector/make_geo_sample.py`, затем
+  `index.html?data=tests/fixtures/live-geo-sample.json` (пароль `test`).
 
 ### Разбор страницы
 

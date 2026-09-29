@@ -24,6 +24,7 @@
     ['проект', 'project'],
     ['вид продукции', 'product'],
     ['выполнение задачи', 'works'],
+    ['описание', 'description'],
   ];
   const ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works'];
   const REQUIRED = ['name', 'start'];
@@ -134,14 +135,19 @@
         return Array.from(td.children).length
           ? Array.from(td.children).map(el => clean(el.textContent)).filter(Boolean).join(' ')
           : clean(td.textContent);
+      case 'description':
+        // превью: Bitrix обрезает до ~200 символов и ставит «...» — полный текст на странице задачи
+        return String(td.textContent || '').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
       default:
         return clean(td.textContent);
     }
   }
 
   /*
-   * → { rows, now, count, columns }
-   *   rows — массив массивов в порядке ORDER; now — «сейчас» Bitrix строкой.
+   * → { rows, tasks, now, count, columns }
+   *   rows — массив массивов в порядке ORDER; now — «сейчас» Bitrix строкой;
+   *   tasks — по строке на задачу: { id, url, description } (для анализа топонимов;
+   *   description — превью из колонки «Описание», '' если колонки нет).
    * Ошибки — BitrixParseError с code: LOGIN_REQUIRED, NO_TABLE, NO_HEADER, NO_COLUMNS.
    */
   function parseBitrixTasks(doc) {
@@ -152,9 +158,16 @@
     const col = mapHeaders(table);
     const now = readServerNow(doc);
     const rows = [];
+    const tasks = [];
     for (const tr of table.querySelectorAll('tbody tr.task-list-item[data-id]')) {
       const cells = tr.cells;
       rows.push(ORDER.map(f => (f in col ? cellValue(f, cells[col[f]], now) : '')));
+      const link = col.name != null && cells[col.name] && cells[col.name].querySelector('a.task-title-link');
+      tasks.push({
+        id: tr.getAttribute('data-id'),
+        url: link ? link.getAttribute('href') : '',
+        description: 'description' in col ? cellValue('description', cells[col.description], now) : '',
+      });
     }
     // Постраничный вывод: активна ссылка «Следующая» — значит, задачи не все
     const next = Array.from(doc.querySelectorAll('#tasks-list-navigation-footer .pagination li'))
@@ -162,6 +175,7 @@
     const hasNextPage = !!next && !next.classList.contains('disabled');
     return {
       rows,
+      tasks,
       now: now ? fmt(now.y, now.mo, now.d, now.h, now.mi, now.s) : null,
       count: rows.length,
       columns: Object.keys(col),

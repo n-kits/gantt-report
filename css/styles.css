@@ -256,3 +256,30 @@ table.tl {
 .tt-late { color: #B42318; font-weight: 700; margin-left: 6px; }
 .tt-early { color: #2E7D4F; font-weight: 700; margin-left: 6px; }
 
+
+/* --- Карта топонимов ----------------------------------------------------- */
+.geo { margin-top: 16px; }
+.geo[hidden] { display: none; }
+.geo-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
+.geo-head h2 { margin: 0; font-size: 16px; color: var(--header); }
+.geo-info { font-size: 12px; color: var(--gray); }
+.geo-stage {
+  position: relative; height: min(520px, 70vh);
+  border: 1px solid var(--line); background: #E6EDF1; overflow: hidden;
+}
+.geo-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.geo-stage canvas.drag { cursor: grabbing; }
+.geo-zoom { position: absolute; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.geo-zoom button {
+  width: 28px; height: 28px; padding: 0; font: inherit; font-size: 17px; line-height: 1; cursor: pointer;
+  color: var(--text); background: var(--light); border: 1px solid var(--line); border-radius: 3px;
+}
+.geo-zoom button:hover { border-color: var(--accent); }
+.geo-tip {
+  position: absolute; pointer-events: none; z-index: 2; white-space: nowrap;
+  padding: 3px 8px; font-size: 12px; color: #fff; background: var(--header); border-radius: 3px;
+}
+.geo-tip[hidden] { display: none; }
+.geo-legend .gdot { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 8px; border-radius: 50%; vertical-align: -1px; }
+.geo-legend .gdot.today { background: var(--accent); }
+.geo-legend .gdot.old { background: #8A919C; opacity: .75; }
