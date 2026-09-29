@@ -101,7 +101,7 @@ window.GanttSources.push({
 ## Живые данные из Bitrix
 
 ```
-[ПК со сборщиком] Планировщик Windows, раз в час
+[ПК со сборщиком] Планировщик Windows, раз в полчаса (в :15 и :45)
   └─ tools/collector/collect.py: Playwright + Edge (свой профиль с входом в Bitrix)
        → «ВСЕ КАРТЫ Р24» за последние 3 суток по регистрации
        → js/sources/bitrix-tasks.js разбирает таблицу прямо в странице
@@ -117,7 +117,7 @@ window.GanttSources.push({
 
 ```bash
 python -m pip install playwright cryptography
-python tools/collector/collect.py --setup         # пароль для коллег, интервал (по умолчанию 60 мин)
+python tools/collector/collect.py --setup         # пароль для коллег, интервал (по умолчанию 30 мин)
 python tools/collector/collect.py --login         # окно Edge: войти в Bitrix, «Запомнить меня»
 python tools/collector/collect.py --dry-run -v    # проверка без публикации
 python tools/collector/collect.py -v              # первая публикация
@@ -125,8 +125,9 @@ python tools/collector/collect.py --install-task  # запуск по распи
 ```
 
 Настройки, профиль Edge и журнал — в `%LOCALAPPDATA%\gantt-collector`
-(`config.json`, `collector.log`). Интервал меняется в `config.json` → `interval_min`,
-затем повторить `--install-task`.
+(`config.json`, `collector.log`). Интервал меняется в `config.json` → `interval_min` (минуты), привязка к минуте часа —
+`align_minute` (15 → запуски в :15 и :45; `null` — от момента установки); затем повторить
+`--install-task`.
 
 Если сессия Bitrix истекла, сборщик публикует статус «нужен вход» (страница покажет
 предупреждение и последние удачные данные) — достаточно снова выполнить `--login`.

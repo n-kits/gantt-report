@@ -49,7 +49,8 @@ DEFAULTS = {
     "days": 3,                  # диапазон: последние N суток по времени регистрации
     "day_start_hour": 4,        # сутки начинаются в 04:00, как ось ленты
     "utc_offset_hours": 3,      # время пользователя Bitrix (МСК)
-    "interval_min": 60,         # период запуска в Планировщике
+    "interval_min": 30,         # период запуска в Планировщике
+    "align_minute": 15,         # запуски с выравниванием: :15, :45 (None — от момента установки)
     "git_remote": "https://github.com/n-kits/gantt-report.git",
     "data_branch": "data",
     "data_file": "live.json",
@@ -363,9 +364,17 @@ def install_task(cfg: dict) -> None:
     pyw = Path(sys.executable).with_name("pythonw.exe")
     exe = pyw if pyw.exists() else Path(sys.executable)
     tr = f'"{exe}" "{Path(__file__).resolve()}"'
-    subprocess.run(["schtasks", "/Create", "/F", "/TN", TASK_NAME, "/SC", "MINUTE", "/MO", str(cfg["interval_min"]),
-                    "/TR", tr], check=True)
-    print(f"Задача «{TASK_NAME}» будет запускаться каждые {cfg['interval_min']} мин (пока вы вошли в Windows).")
+    cmd = ["schtasks", "/Create", "/F", "/TN", TASK_NAME, "/SC", "MINUTE", "/MO", str(cfg["interval_min"]), "/TR", tr]
+    align = cfg.get("align_minute")
+    if align is not None:
+        # старт в 00:MM и повтор каждые N минут → запуски в фиксированные минуты часа
+        cmd += ["/ST", f"00:{int(align) % 60:02d}"]
+    subprocess.run(cmd, check=True)
+    when = ""
+    if align is not None:
+        mins = sorted({(int(align) + k * cfg["interval_min"]) % 60 for k in range(max(1, 60 // cfg["interval_min"]))})
+        when = " (в " + ", ".join(f":{m:02d}" for m in mins) + " каждого часа)" if cfg["interval_min"] <= 60 else ""
+    print(f"Задача «{TASK_NAME}» будет запускаться каждые {cfg['interval_min']} мин{when}, пока вы вошли в Windows.")
 
 
 def main(argv=None) -> int:
