@@ -290,7 +290,7 @@ def analyze(tasks: list[dict], cfg: dict) -> dict:
     for i in range(0, len(tasks), BATCH_SIZE):
         batch = tasks[i:i + BATCH_SIZE]
         body = "\n\n".join(f"--- Заказ ID: {t['id']} ---\nНазвание: {t['name']}\n{t['text'][:MAX_TEXT]}" for t in batch)
-        model = cfg.get("llm_model", "claude-opus-5-5")
+        model = cfg.get("llm_model", "claude-sonnet-5-5")
         # при отказе классификатора сервер сам повторит запрос на другой модели
         # (параметр есть не у всех моделей)
         fb = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if model in FALLBACK_MODELS else {}
@@ -438,6 +438,21 @@ def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
         t["text"] = full or t["preview"]
 
 
+def published(llm: dict, got: dict | None) -> dict | None:
+    """
+    Топоним для live.json: координаты или код страны, тип, макрорегион, источник координат
+    (cache / nominatim / llm / basemap) и расхождение с оценкой модели, км.
+    """
+    if not got:
+        return None
+    p = {k: v for k, v in got.items() if not k.startswith("_")}
+    p["macro"] = llm.get("macro", "")
+    p["src"] = got.get("_src", "")
+    if "lat" in got and p["src"] not in ("llm", "basemap") and isinstance(llm.get("lat"), (int, float)):
+        p["dkm"] = round(km([llm["lat"], llm["lon"]], [got["lat"], got["lon"]]))
+    return p
+
+
 def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     """Анализ новых задач, геокодирование, раздел geo для payload."""
     state_path = app_dir / "geo-state.json"
@@ -452,11 +467,12 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
         now = datetime.now().isoformat(timespec="seconds")
         for t in todo:
             if t["id"] in results:
-                state["tasks"][t["id"]] = {"hash": t["hash"], "result": results[t["id"]], "analyzedAt": now}
+                state["tasks"][t["id"]] = {"hash": t["hash"], "result": results[t["id"]], "analyzedAt": now,
+                                           "model": cfg.get("llm_model")}
 
     cache = GeoCache(app_dir / "geocache.json")
     coder = Geocoder(cache)
-    items, review = [], []
+    items = []
     today = datetime.now().date().isoformat()
     for row, t in zip(res["rows"], res.get("tasks", [])):
         st = state["tasks"].get(t["id"])
@@ -464,16 +480,16 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
             continue
         st["seen"] = today
         r = st.get("result") or {}
-        pairs = [(x, coder.resolve(x)) for x in r.get("toponyms", [])]
-        tops = [{k: v for k, v in p.items() if not k.startswith("_")} for _, p in pairs if p]
+        tops = [p for p in (published(x, coder.resolve(x)) for x in r.get("toponyms", [])) if p]
         items.append({"id": t["id"], "start": row[2], "themes": r.get("themes", []),
-                      "conflict": r.get("conflict", ""), "sentiment": r.get("sentiment", ""), "toponyms": tops})
-        # локальный разбор для проверки глазами (geo-review.json, не публикуется)
-        review.append({"id": t["id"], "name": row[0], "start": row[2], "project": row[6], "product": row[7],
-                       "themes": r.get("themes", []), "conflict": r.get("conflict", ""), "sentiment": r.get("sentiment", ""),
-                       "toponyms": [dict(llm=x, got=p) for x, p in pairs]})
+                      "conflict": r.get("conflict", ""), "sentiment": r.get("sentiment", ""),
+                      "model": st.get("model") or "", "toponyms": tops})
     cache.save()
-    _save_json(app_dir / "geo-review.json", {"now": res.get("now"), "model": cfg.get("llm_model"), "items": review})
+    # для локальной страницы проверки (geo_review.py) — те же данные плюс поля задачи
+    rows_by_id = {t["id"]: row for row, t in zip(res["rows"], res.get("tasks", []))}
+    _save_json(app_dir / "geo-review.json", {"now": res.get("now"), "model": cfg.get("llm_model"), "items": [
+        dict(it, name=rows_by_id[it["id"]][0], project=rows_by_id[it["id"]][6], product=rows_by_id[it["id"]][7])
+        for it in items]})
 
     cutoff = (datetime.now() - timedelta(days=KEEP_DAYS)).date().isoformat()
     state["tasks"] = {k: v for k, v in state["tasks"].items() if v.get("seen", today) >= cutoff}

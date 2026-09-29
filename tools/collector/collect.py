@@ -11,6 +11,7 @@
     python collect.py --install-task   # зарегистрировать задачу в Планировщике Windows
     python collect.py --remove-task    # удалить задачу
     python collect.py --import-geocache in/analyze_geocode/geocache.geojson   # заполнить кэш координат
+    python collect.py --export-day 2026-09-27   # выгрузить день из локального архива в Excel вручную
 
 Всё локальное (настройки, профиль Edge, журнал) — в %LOCALAPPDATA%\\gantt-collector.
 Зависимости: playwright, cryptography; браузер — установленный Microsoft Edge.
@@ -59,9 +60,11 @@ DEFAULTS = {
     "kdf_iterations": 250000,
     "password": None,           # пароль шифрования для коллег (задаётся --setup)
     "geo": True,                # карта топонимов: анализ описаний через Claude + геокодирование
-    "llm_model": "claude-opus-5-5",
+    "llm_model": "claude-sonnet-5-5",
     "llm_effort": "medium",
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
+    "archive": True,            # локальный архив задач (archive.sqlite) и выгрузка выпавших дней в Excel
+    "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив
 }
 
 log = logging.getLogger("collector")
@@ -326,6 +329,11 @@ def run(cfg: dict, dry_run: bool) -> int:
                     geo_part = geo.build(APP_DIR, cfg, res, res.get("geo_todo", []))
                 except Exception:  # noqa: BLE001 — без карты лента всё равно публикуется
                     log.exception("Карта топонимов не собрана")
+            if cfg.get("archive"):
+                try:
+                    save_archive(cfg, res, geo_part)
+                except Exception:  # noqa: BLE001 — архив не должен мешать публикации
+                    log.exception("Архив не обновлён")
         payload = {"rows": res["rows"], "now": res["now"], "range": res["range"], "sourceName": cfg["source_name"]}
         if geo_part is not None:
             payload["geo"] = geo_part
@@ -364,6 +372,19 @@ def run(cfg: dict, dry_run: bool) -> int:
         log.error("%s: %s", e.code, e)
         return 1
     return code
+
+
+def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
+    import archive
+    texts = {t["id"]: t["text"] for t in res.get("geo_todo", []) if t.get("text")}
+    db = archive.connect(APP_DIR / "archive.sqlite")
+    try:
+        n = archive.update(db, cfg, res, geo_part, texts)
+        frm = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M")
+        archive.export_closed(db, cfg, frm, archive.archive_dir(cfg))
+        log.info("Архив: обновлено задач %s", n)
+    finally:
+        db.close()
 
 
 def load_geo_state() -> dict:
@@ -415,6 +436,7 @@ def main(argv=None) -> int:
     g.add_argument("--install-task", action="store_true", help="добавить в Планировщик Windows")
     g.add_argument("--remove-task", action="store_true", help="удалить из Планировщика")
     g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
+    g.add_argument("--export-day", metavar="ГГГГ-ММ-ДД", help="выгрузить день из архива в Excel (заново)")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -434,6 +456,15 @@ def main(argv=None) -> int:
         import geo
         n = geo.GeoCache(APP_DIR / "geocache.json").import_geojson(Path(args.import_geocache))
         print(f"В кэш координат добавлено: {n}")
+        return 0
+    if args.export_day:
+        import archive
+        db = archive.connect(APP_DIR / "archive.sqlite")
+        try:
+            p = archive.export_day(db, cfg, args.export_day, archive.archive_dir(cfg), record=False)
+        finally:
+            db.close()
+        print(p or f"За {args.export_day} в архиве задач нет")
         return 0
     if args.remove_task:
         subprocess.run(["schtasks", "/Delete", "/F", "/TN", TASK_NAME], check=False)

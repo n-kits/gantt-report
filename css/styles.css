@@ -298,3 +298,27 @@ table.tl {
 .geo-legend .gdot { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 8px; border-radius: 50%; vertical-align: -1px; }
 .geo-legend .gdot.today { background: var(--map-today); }
 .geo-legend .gdot.old { background: var(--map-old); opacity: var(--map-old-opacity); }
+
+/* Сводная таблица «Задачи и топонимы» */
+.geo-h2 { margin: 20px 0 4px; font-size: 16px; color: var(--header); }
+.geo-src-legend { margin: 0 0 6px; }
+.geo-table { overflow-x: auto; }
+table.geo-tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; background: #fff; }
+.geo-tbl th, .geo-tbl td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; text-align: left; }
+.geo-tbl th { background: var(--header); color: #fff; position: sticky; top: 0; z-index: 1; font-weight: 700; }
+.geo-tbl th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.geo-tbl th.sortable:hover { background: var(--navy); }
+.geo-tbl .id, .geo-tbl .t { white-space: nowrap; }
+.geo-tbl .nm { font-weight: 700; }
+.geo-tbl .meta { color: var(--gray); font-size: 11.5px; }
+.geo-tbl ul { margin: 0; padding-left: 16px; }
+.geo-tbl .kind { color: var(--gray); font-size: 11px; }
+.geo-tbl .km { font-size: 11px; color: var(--gray); }
+.geo-tbl .km.far { color: #B42318; font-weight: 700; }
+.geo-tbl .coord { font-size: 11px; color: #9CA3AF; }
+.geo-tbl .miss { color: var(--gray); }
+.src { font-size: 11px; font-style: normal; padding: 0 5px; border-radius: 3px; background: #E5E7EB; color: var(--text); }
+.src.cache { background: #D8EDE0; }
+.src.nominatim { background: #DBE7F5; }
+.src.llm { background: #F3C6C0; }
+.src.basemap { background: #EDE3D1; }

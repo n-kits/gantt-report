@@ -106,6 +106,14 @@
         <span class="sw" style="background:var(--map-country-old)"></span>страна раньше.
         Колесо мыши — масштаб, перетаскивание — сдвиг.
       </p>
+
+      <h2 class="geo-h2">Задачи и топонимы</h2>
+      <p class="legend geo-src-legend">Источник координат:
+        <span class="src cache">кэш</span> <span class="src nominatim">Nominatim</span>
+        <span class="src basemap">полигон страны</span> <span class="src llm">оценка модели</span> (не подтверждено геокодером).
+        «км» — насколько найденная точка отстоит от оценки модели; красным — больше 50 км.
+      </p>
+      <div id="geo-table" class="geo-table"></div>
     </section>
   </main>
 
@@ -121,6 +129,7 @@
   <script src="js/app.js"></script>
   <script src="js/map/geo-model.js"></script>
   <script src="js/map/geo-map.js"></script>
+  <script src="js/map/geo-table.js"></script>
   <script src="js/live.js"></script>
 </body>
 </html>
