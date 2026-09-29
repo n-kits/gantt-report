@@ -77,7 +77,7 @@
     eq(byId['102'].late, true, 'выполняется после срока');
     eq(M.barColor(byId['102']), '#E2D6F3', 'выполняется, срок прошёл — светло-фиолетовый');
     eq(byId['103'].late, false);
-    eq(M.barColor(byId['103']), '#D8EDE0', 'на рассмотрении в срок — светло-зелёный');
+    eq(M.barColor(byId['103']), '#C4E3CF', 'на рассмотрении в срок — светло-зелёный');
     eq(iso(byId['103'].actualEnd), iso(NOW));
   });
 
@@ -85,8 +85,8 @@
     const late = ['Схема #104', 'На рассмотрении', '14.09.26 10:00:00', '14.09.26 12:00:00', 'Сидоров В.', '14.09.26 11:00:00', '', '', ''];
     const tl = M.buildTimeline(DATA.concat([late]), { now: NOW, step: 1 });
     const mark = id => tl.rows.find(r => r.task.id === id);
-    eq([mark('104').barColor, mark('104').barMark], ['#F8D7D3', '#B42318'], 'светло-красная, красный ◆');
-    eq([mark('103').barColor, mark('103').barMark], ['#D8EDE0', '#2E7D4F'], 'светло-зелёная, зелёный ◆');
+    eq([mark('104').barColor, mark('104').barMark], ['#F3C6C0', '#B42318'], 'светло-красная, красный ◆');
+    eq([mark('103').barColor, mark('103').barMark], ['#C4E3CF', '#2E7D4F'], 'светло-зелёная, зелёный ◆');
     eq([mark('102').barColor, mark('102').barMark], ['#E2D6F3', '#6B21A8'], 'светло-фиолетовая, фиолетовый ◆');
     eq([mark('100').barColor, mark('100').barMark], ['#2E7D4F', '#FFFFFF'], 'насыщенная — белый ◆');
     eq([mark('100').statusColor, mark('100').statusBg], ['#FFFFFF', '#2E7D4F'], 'плашка «Завершена»');

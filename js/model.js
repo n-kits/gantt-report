@@ -33,14 +33,16 @@
     blue: '#2B6CB0', blue_bg: '#D6E6F5', red: '#B42318', red_bg: '#F8D7D3',
     gray: '#6B7280', gray_bg: '#EEECE6', gold: '#C9A227', light: '#FAF8F3', alt: '#F0EBE1',
     violet: '#6B21A8', violet_bg: '#E2D6F3',
+    // полосы «на рассмотрении»: чуть насыщеннее фонов плашек, чтобы не сливаться с пустыми ячейками
+    review_bar: '#C4E3CF', review_late_bar: '#F3C6C0',
   };
   // плашка в колонке «Статус»: цвет текста и фон
   const STATUS_COLOR = { [STATUS_DONE]: C.white, [STATUS_REVIEW]: C.green, [STATUS_RUN]: C.blue };
   const STATUS_BG = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue_bg };
   // полоса на ленте (без нарушения срока)
-  const BAR_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue };
+  const BAR_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.review_bar, [STATUS_RUN]: C.blue };
   // «◆» на светлых полосах — тёмный в тон полосе; на насыщенных — белый
-  const BAR_MARK = { [C.green_bg]: C.green, [C.red_bg]: C.red, [C.violet_bg]: C.violet };
+  const BAR_MARK = { [C.review_bar]: C.green, [C.review_late_bar]: C.red, [C.violet_bg]: C.violet };
   // 16 цветов исполнителей — подобраны расчётом (tools/palette.py): максимум минимального
   // ΔE2000 между любыми двумя цветами (≥ 12.9) при контрасте ≥ 4.5 на фоне строки и
   // подсветки, светлоте L* ≥ 30, насыщенности 25 ≤ C* ≤ 70 и ΔE ≥ 20 до цветов статусов.
@@ -235,7 +237,7 @@
 
   function barColor(t) {
     if (t.late && t.status === STATUS_RUN) return C.violet_bg;
-    if (t.late && t.status === STATUS_REVIEW) return C.red_bg;
+    if (t.late && t.status === STATUS_REVIEW) return C.review_late_bar;
     if (t.late) return C.red;
     return BAR_COLOR[t.status] || C.gray;
   }
