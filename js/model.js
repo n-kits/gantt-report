@@ -32,9 +32,15 @@
     green: '#2E7D4F', green_bg: '#D8EDE0', orange: '#C47A16', orange_bg: '#F8E6C8',
     blue: '#2B6CB0', blue_bg: '#D6E6F5', red: '#B42318', red_bg: '#F8D7D3',
     gray: '#6B7280', gray_bg: '#EEECE6', gold: '#C9A227', light: '#FAF8F3', alt: '#F0EBE1',
+    violet: '#6B21A8', violet_bg: '#E2D6F3',
   };
-  const STATUS_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.orange, [STATUS_RUN]: C.blue };
-  const STATUS_BG = { [STATUS_DONE]: C.green_bg, [STATUS_REVIEW]: C.orange_bg, [STATUS_RUN]: C.blue_bg };
+  // плашка в колонке «Статус»: цвет текста и фон
+  const STATUS_COLOR = { [STATUS_DONE]: C.white, [STATUS_REVIEW]: C.green, [STATUS_RUN]: C.blue };
+  const STATUS_BG = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue_bg };
+  // полоса на ленте (без нарушения срока)
+  const BAR_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue };
+  // «◆» на светлых полосах — тёмный в тон полосе; на насыщенных — белый
+  const BAR_MARK = { [C.green_bg]: C.green, [C.red_bg]: C.red, [C.violet_bg]: C.violet };
   // 16 цветов исполнителей — подобраны расчётом (tools/palette.py): максимум минимального
   // ΔE2000 между любыми двумя цветами (≥ 12.9) при контрасте ≥ 4.5 на фоне строки и
   // подсветки, светлоте L* ≥ 30, насыщенности 25 ≤ C* ≤ 70 и ΔE ≥ 20 до цветов статусов.
@@ -228,10 +234,14 @@
   }
 
   function barColor(t) {
-    if (t.late && t.status === STATUS_RUN) return C.accent;
-    if (t.late && t.status === STATUS_REVIEW) return '#9A3412';
+    if (t.late && t.status === STATUS_RUN) return C.violet_bg;
+    if (t.late && t.status === STATUS_REVIEW) return C.red_bg;
     if (t.late) return C.red;
-    return STATUS_COLOR[t.status] || C.gray;
+    return BAR_COLOR[t.status] || C.gray;
+  }
+
+  function barMarkColor(bar) {
+    return BAR_MARK[bar] || C.white;
   }
 
   function capacityColor(cnt) {
@@ -298,6 +308,7 @@
       return {
         task: t,
         barColor: barColor(t),
+        barMark: barMarkColor(barColor(t)),
         execShort: t.executor ? t.executor.split(/\s+/)[0] : '—',
         execColor: execColors.get(t.executor) || '#1F2937',
         statusColor: STATUS_COLOR[t.status] || C.gray,

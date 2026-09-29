@@ -46,7 +46,7 @@
         const on = r.startIdx != null && r.startIdx <= h && h <= r.endIdx;
         const dl = r.dlIdx === h;
         if (on) {
-          out.push(`<td class="s on" style="background:${r.barColor}">${dl ? '◆' : ''}</td>`);
+          out.push(`<td class="s on" style="background:${r.barColor};color:${r.barMark}">${dl ? '◆' : ''}</td>`);
         } else if (dl) {
           out.push('<td class="s dl">◆</td>');
         } else {

@@ -232,7 +232,7 @@ table.tl {
 
 .legend { margin: 8px 0 0; font-size: 12px; font-style: italic; color: var(--gray); line-height: 1.8; }
 .legend[hidden] { display: none; }
-.legend .sw { display: inline-block; width: 12px; height: 10px; margin: 0 3px 0 8px; vertical-align: -1px; }
+.legend .sw { display: inline-block; width: 12px; height: 10px; margin: 0 3px 0 8px; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgba(15, 44, 58, .2); }
 
 /* --- Подсказка ----------------------------------------------------------- */
 .tooltip {
@@ -245,7 +245,7 @@ table.tl {
 .tooltip table { border-collapse: collapse; }
 .tooltip th { text-align: left; font-weight: 400; color: var(--gray); padding: 1px 12px 1px 0; white-space: nowrap; vertical-align: top; }
 .tooltip td { padding: 1px 0; }
-.tt-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; }
+.tt-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; box-shadow: inset 0 0 0 1px rgba(15, 44, 58, .25); }
 .tt-late { color: #B42318; font-weight: 700; margin-left: 6px; }
 .tt-early { color: #2E7D4F; font-weight: 700; margin-left: 6px; }
 
