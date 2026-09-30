@@ -61,7 +61,7 @@ DEFAULTS = {
     "kdf_iterations": 250000,
     "password": None,           # пароль шифрования для коллег (задаётся --setup)
     "geo": True,                # карта топонимов: анализ описаний через Claude + геокодирование
-    "llm": True,                # False — «стоп»: к Claude не обращаемся, карта — по уже разобранным задачам
+    "llm": False,               # анализ через Claude выключен по умолчанию; включить — --llm on / llm-on.cmd
     "llm_model": "claude-sonnet-5-5",
     "llm_effort": "medium",
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
@@ -387,7 +387,7 @@ def llm_switch(cfg: dict, mode: str) -> int:
         waiting = sum(1 for v in load_geo_state()["tasks"].values() if "result" not in v and v.get("text"))
     except Exception:  # noqa: BLE001
         waiting = 0
-    if cfg.get("llm", True):
+    if cfg.get("llm", False):
         print("LLM включён: новые задачи анализируются" + (f" (в очереди {waiting})" if waiting else "") + ".")
     else:
         print(f"LLM ВЫКЛЮЧЕН: лента и карта по уже разобранным задачам обновляются, новые задачи ждут"

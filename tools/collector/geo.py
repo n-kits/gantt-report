@@ -474,7 +474,7 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     state_path = app_dir / "geo-state.json"
     state = _load_json(state_path, {"tasks": {}})
     todo = [t for t in todo if "text" in t]
-    llm_on = cfg.get("llm", True)
+    llm_on = cfg.get("llm", False)
     if todo and not llm_on:
         # «стоп»: в LLM ничего не уходит; тексты сохраняем, чтобы не скачивать заново
         for t in todo:
