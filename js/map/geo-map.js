@@ -25,6 +25,7 @@
     countryToday: 'rgba(196, 92, 38, .30)',
     countryTodayLine: 'rgba(196, 92, 38, .75)',
     countryOld: 'rgba(107, 114, 128, .12)',
+    countryOldLine: 'rgba(107, 114, 128, .55)',
   };
   const PULSE_MS = 2400;
 
@@ -209,9 +210,14 @@
       ctx.strokeStyle = COLORS.countryTodayLine;
       ctx.stroke(e.path);
     }
+    // страна под курсором — контуром своего статуса, чуть толще обычного
     if (hover && hover.iso) {
       const e = basemap.paths.get(hover.iso);
-      if (e) { ctx.lineWidth = 2 / k; ctx.strokeStyle = COLORS.today; ctx.stroke(e.path); }
+      if (e) {
+        ctx.lineWidth = 2 / k;
+        ctx.strokeStyle = hover.today ? COLORS.countryTodayLine : COLORS.countryOldLine;
+        ctx.stroke(e.path);
+      }
     }
   }
 
