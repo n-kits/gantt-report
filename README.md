@@ -181,6 +181,12 @@ collect.py (тот же запуск)
 - Тестовые данные с картой: `python tools/collector/make_geo_sample.py`, затем
   `index.html?data=tests/fixtures/live-geo-sample.json` (пароль `test`).
 
+### Очистка текста перед LLM (заморожено)
+
+Черновик `tools/collector/scrub_draft.py` убирает из описаний телефоны, e-mail, подписи писем,
+заголовки ответов и пересылок; в сборщик не подключён. Находки, результаты замера и три открытых
+вопроса — в [issue #3](https://github.com/n-kits/gantt-report/issues/3).
+
 ### Локальный архив
 
 Всё, что видит сборщик, копится в `%LOCALAPPDATA%\gantt-collector\archive.sqlite` (задачи с
