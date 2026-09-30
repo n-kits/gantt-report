@@ -95,6 +95,19 @@
       ['#2E7D4F', '#B42318', null, null], 'обводка — только у «на рассмотрении», цветом будущего статуса');
   });
 
+  test('«Зарегистрирована» и «Не обработана»: свои цвета и после срока', () => {
+    const extra = [
+      ['Новая #105', 'Зарегистрирована', '14.09.26 11:00:00', '', 'Сидоров В.', '14.09.26 12:00:00', '', '', ''],
+      ['Забытая #106', 'Не обработана', '14.09.26 09:00:00', '', 'Петров Б.', '14.09.26 10:00:00', '', '', ''],
+    ];
+    const tl = M.buildTimeline(DATA.concat(extra), { now: NOW, step: 1 });
+    const r = id => tl.rows.find(x => x.task.id === id);
+    eq([r('105').statusColor, r('105').statusBg, r('105').barColor, r('105').barOutline, r('105').barMark],
+      ['#9B4E0B', '#FBE4CF', '#F7CBA7', '#9B4E0B', '#9B4E0B'], 'светло-оранжевая с тёмно-оранжевой обводкой');
+    eq([r('106').statusColor, r('106').statusBg, r('106').barColor, r('106').barOutline, r('106').barMark],
+      ['#FFFFFF', '#E82129', '#E82129', null, '#FFFFFF'], 'ярко-красная, белый текст');
+  });
+
   test('inferWindow: ось с 04:00, минимум 8 колонок, лимит 72', () => {
     const { tasks } = M.loadTasks(DATA, NOW);
     const w = M.inferWindow(tasks, NOW, { step: 1, maxCols: 72 });

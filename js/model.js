@@ -12,6 +12,8 @@
   const STATUS_DONE = 'Завершена';
   const STATUS_REVIEW = 'На рассмотрении';
   const STATUS_RUN = 'Выполняется';
+  const STATUS_NEW = 'Зарегистрирована';
+  const STATUS_UNPROC = 'Не обработана';
 
   const DAY_START_HOUR = 4; // ось всегда начинается с 04:00
   const MAX_TIMELINE_COLS = 72;
@@ -35,14 +37,27 @@
     violet: '#6B21A8', violet_bg: '#D8C8EE',
     // полосы «на рассмотрении»: чуть насыщеннее фонов плашек, чтобы не сливаться с пустыми ячейками
     review_bar: '#C4E3CF', review_late_bar: '#F3C6C0',
+    // «Зарегистрирована»: плашка, полоса и тёмно-оранжевый текст/обводка (контраст 4.9 на плашке)
+    new_bg: '#FBE4CF', new_bar: '#F7CBA7', new_ink: '#9B4E0B',
+    // «Не обработана»: ярко-красный, белый текст (контраст 4.5), отличим от #B42318 по яркости
+    alarm: '#E82129',
   };
   // плашка в колонке «Статус»: цвет текста и фон
-  const STATUS_COLOR = { [STATUS_DONE]: C.white, [STATUS_REVIEW]: C.green, [STATUS_RUN]: C.blue };
-  const STATUS_BG = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue_bg };
+  const STATUS_COLOR = {
+    [STATUS_DONE]: C.white, [STATUS_REVIEW]: C.green, [STATUS_RUN]: C.blue,
+    [STATUS_NEW]: C.new_ink, [STATUS_UNPROC]: C.white,
+  };
+  const STATUS_BG = {
+    [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue_bg,
+    [STATUS_NEW]: C.new_bg, [STATUS_UNPROC]: C.alarm,
+  };
   // полоса на ленте (без нарушения срока)
-  const BAR_COLOR = { [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.review_bar, [STATUS_RUN]: C.blue };
+  const BAR_COLOR = {
+    [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.review_bar, [STATUS_RUN]: C.blue,
+    [STATUS_NEW]: C.new_bar, [STATUS_UNPROC]: C.alarm,
+  };
   // «◆» на светлых полосах — тёмный в тон полосе; на насыщенных — белый
-  const BAR_MARK = { [C.review_bar]: C.green, [C.review_late_bar]: C.red, [C.violet_bg]: C.violet };
+  const BAR_MARK = { [C.review_bar]: C.green, [C.review_late_bar]: C.red, [C.violet_bg]: C.violet, [C.new_bar]: C.new_ink };
   const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
   // 16 цветов исполнителей — подобраны расчётом (tools/palette.py): максимум минимального
   // ΔE2000 между любыми двумя цветами (≥ 12.9) при контрасте ≥ 4.5 на фоне строки и
@@ -237,14 +252,18 @@
   }
 
   function barColor(t) {
+    // «Зарегистрирована» и «Не обработана» — всегда своим цветом, даже после срока
+    if (t.status === STATUS_NEW || t.status === STATUS_UNPROC) return BAR_COLOR[t.status];
     if (t.late && t.status === STATUS_RUN) return C.violet_bg;
     if (t.late && t.status === STATUS_REVIEW) return C.review_late_bar;
     if (t.late) return C.red;
     return BAR_COLOR[t.status] || C.gray;
   }
 
-  // Обводка полосы «на рассмотрении» — цвет, которым она станет после завершения
+  // Обводка: у «на рассмотрении» — цвет, которым полоса станет после завершения,
+  // у «зарегистрирована» — тёмно-оранжевый в тон полосе
   function barOutline(t) {
+    if (t.status === STATUS_NEW) return C.new_ink;
     if (t.status !== STATUS_REVIEW) return null;
     return t.late ? C.red : C.green;
   }
@@ -355,7 +374,7 @@
   }
 
   const api = {
-    STATUS_DONE, STATUS_REVIEW, STATUS_RUN,
+    STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_UNPROC,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, shortName, guessNowFromFilename,
     loadTasks, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
