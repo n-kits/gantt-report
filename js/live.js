@@ -112,9 +112,11 @@
     shownKey = envelope.dataAt;
     const now = M.parseDt(payload.now) || new Date(envelope.dataAt);
     App.loadRows(payload.rows, payload.sourceName || envelope.source, now, 'live');
-    if (root.GanttMap) root.GanttMap.show(payload.geo || null, now);
-    if (root.GanttGeoTable && payload.geo) {
-      root.GanttGeoTable.mount(document.getElementById('geo-table'), root.GanttGeoTable.fromLive(payload.geo, payload.rows));
+    // анализ через LLM выключен в сборщике — карту и таблицу не показываем, пока его не включат
+    const geo = payload.geo && payload.geo.llm !== false ? payload.geo : null;
+    if (root.GanttMap) root.GanttMap.show(geo, now);
+    if (root.GanttGeoTable && geo) {
+      root.GanttGeoTable.mount(document.getElementById('geo-table'), root.GanttGeoTable.fromLive(geo, payload.rows));
     }
     App.showMsg(...statusMessage(envelope));
   }
