@@ -411,7 +411,10 @@ def pending(state: dict, res: dict) -> list[dict]:
         st = state["tasks"].get(t["id"])
         if st and st.get("hash") == h and ("result" in st or not retry_due(st)):
             continue
-        out.append({"id": t["id"], "name": row[0], "url": t["url"], "preview": t["description"], "hash": h})
+        item = {"id": t["id"], "name": row[0], "url": t["url"], "preview": t["description"], "hash": h}
+        if st and st.get("hash") == h and st.get("text"):
+            item["text"] = st["text"]       # текст уже скачан (анализ был выключен или не удался)
+        out.append(item)
     return out
 
 
@@ -432,7 +435,7 @@ def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
     если превью нет (колонка «Описание» не включена) или оно обрезано.
     Без поля text задача не анализируется и будет повторена в следующий запуск.
     """
-    for t in todo[:limit]:
+    for t in [x for x in todo if "text" not in x][:limit]:
         if not t["url"] or (t["preview"] and not is_truncated(t["preview"])):
             t["text"] = t["preview"]
             continue
@@ -471,7 +474,16 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     state_path = app_dir / "geo-state.json"
     state = _load_json(state_path, {"tasks": {}})
     todo = [t for t in todo if "text" in t]
-    if todo:
+    llm_on = cfg.get("llm", True)
+    if todo and not llm_on:
+        # «стоп»: в LLM ничего не уходит; тексты сохраняем, чтобы не скачивать заново
+        for t in todo:
+            prev = state["tasks"].get(t["id"]) or {}
+            keep = {k: prev[k] for k in ("attempts", "failedAt") if prev.get("hash") == t["hash"] and k in prev}
+            state["tasks"][t["id"]] = dict(keep, hash=t["hash"], text=t["text"],
+                                           seen=prev.get("seen") or datetime.now().date().isoformat())
+        log.info("LLM выключен (--llm on — включить): ждут анализа %s", len(todo))
+    elif todo:
         try:
             results = analyze([{"id": t["id"], "name": t["name"], "text": t["text"]} for t in todo], cfg)
         except Exception as e:  # noqa: BLE001 — лента публикуется и без карты
@@ -485,7 +497,7 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
             else:
                 prev = state["tasks"].get(t["id"]) or {}
                 n = prev.get("attempts", 0) + 1 if prev.get("hash") == t["hash"] else 1
-                state["tasks"][t["id"]] = {"hash": t["hash"], "failedAt": now, "attempts": n,
+                state["tasks"][t["id"]] = {"hash": t["hash"], "failedAt": now, "attempts": n, "text": t["text"],
                                            "seen": prev.get("seen") or datetime.now().date().isoformat()}
                 if n >= MAX_ATTEMPTS:
                     log.warning("Задача %s: анализ не удался %s раз — больше не пробуем", t["id"], n)
@@ -493,13 +505,17 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     cache = GeoCache(app_dir / "geocache.json")
     coder = Geocoder(cache)
     items = []
+    waiting = 0                         # задачи окна без анализа, которые ещё будут разобраны
     today = datetime.now().date().isoformat()
     for row, t in zip(res["rows"], res.get("tasks", [])):
         st = state["tasks"].get(t["id"])
+        if not st or "result" not in st:
+            if not st or st.get("attempts", 0) < MAX_ATTEMPTS:
+                waiting += 1
         if not st:
             continue
         st["seen"] = today
-        if "result" not in st:          # анализ не удался — в карту и таблицу не попадает
+        if "result" not in st:          # анализа нет (выключен, не удался) — в карту и таблицу не попадает
             continue
         r = st.get("result") or {}
         tops = [p for p in (published(x, coder.resolve(x)) for x in r.get("toponyms", [])) if p]
@@ -524,4 +540,4 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     approx = sum(1 for i in items for p in i["toponyms"] if p.get("approx"))
     log.info("Карта: задач с анализом %s из %s, топонимов %s, приблизительных %s",
              len(items), len(res["rows"]), n, approx)
-    return {"v": 1, "items": items}
+    return {"v": 1, "llm": bool(llm_on), "waiting": waiting, "items": items}

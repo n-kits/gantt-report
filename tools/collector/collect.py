@@ -12,6 +12,7 @@
     python collect.py --remove-task    # удалить задачу
     python collect.py --import-geocache in/analyze_geocode/geocache.geojson   # заполнить кэш координат
     python collect.py --export-day 2026-09-27   # выгрузить день из локального архива в Excel вручную
+    python collect.py --llm off|on|status       # «стоп» для LLM: лента строится, новые задачи не анализируются
 
 Всё локальное (настройки, профиль Edge, журнал) — в %LOCALAPPDATA%\\gantt-collector.
 Зависимости: playwright, cryptography; браузер — установленный Microsoft Edge.
@@ -60,6 +61,7 @@ DEFAULTS = {
     "kdf_iterations": 250000,
     "password": None,           # пароль шифрования для коллег (задаётся --setup)
     "geo": True,                # карта топонимов: анализ описаний через Claude + геокодирование
+    "llm": True,                # False — «стоп»: к Claude не обращаемся, карта — по уже разобранным задачам
     "llm_model": "claude-sonnet-5-5",
     "llm_effort": "medium",
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
@@ -374,6 +376,25 @@ def run(cfg: dict, dry_run: bool) -> int:
     return code
 
 
+def llm_switch(cfg: dict, mode: str) -> int:
+    """«Кнопка стоп» для LLM: пишет "llm" в config.json; действует со следующего запуска сборщика."""
+    if mode != "status":
+        saved = json.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.exists() else {}
+        saved["llm"] = cfg["llm"] = mode == "on"
+        save_config(saved)
+        log.info("LLM %s вручную", "включён" if cfg["llm"] else "выключен")
+    try:
+        waiting = sum(1 for v in load_geo_state()["tasks"].values() if "result" not in v and v.get("text"))
+    except Exception:  # noqa: BLE001
+        waiting = 0
+    if cfg.get("llm", True):
+        print("LLM включён: новые задачи анализируются" + (f" (в очереди {waiting})" if waiting else "") + ".")
+    else:
+        print(f"LLM ВЫКЛЮЧЕН: лента и карта по уже разобранным задачам обновляются, новые задачи ждут"
+              f" ({waiting}). Включить: python collect.py --llm on")
+    return 0
+
+
 def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
     import archive
     texts = {t["id"]: t["text"] for t in res.get("geo_todo", []) if t.get("text")}
@@ -437,6 +458,7 @@ def main(argv=None) -> int:
     g.add_argument("--remove-task", action="store_true", help="удалить из Планировщика")
     g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
     g.add_argument("--export-day", metavar="ГГГГ-ММ-ДД", help="выгрузить день из архива в Excel (заново)")
+    g.add_argument("--llm", choices=["on", "off", "status"], help="включить / выключить анализ задач через Claude")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -457,6 +479,8 @@ def main(argv=None) -> int:
         n = geo.GeoCache(APP_DIR / "geocache.json").import_geojson(Path(args.import_geocache))
         print(f"В кэш координат добавлено: {n}")
         return 0
+    if args.llm:
+        return llm_switch(cfg, args.llm)
     if args.export_day:
         import archive
         db = archive.connect(APP_DIR / "archive.sqlite")

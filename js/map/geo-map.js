@@ -431,6 +431,12 @@
   // --- API ------------------------------------------------------------------
   function describe() {
     const nP = data.points.length, nC = data.countries.length;
+    const paused = lastGeo && lastGeo.llm === false
+      ? ` Анализ новых задач приостановлен${lastGeo.waiting ? ` — ждут ${lastGeo.waiting}` : ''}.` : '';
+    return describeCounts(nP, nC) + paused;
+  }
+
+  function describeCounts(nP, nC) {
     if (!nP && !nC) return 'Топонимов в задачах за три дня не найдено.';
     const today = data.points.filter(p => p.today).length + data.countries.filter(c => c.today).length;
     return `Топонимов: ${nP + nC}, из них сегодня: ${today}.`;
