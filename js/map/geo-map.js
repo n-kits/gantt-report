@@ -31,17 +31,19 @@
   const PULSE_MS = 2400;
 
   /*
-   * Вид точки (?points=… в адресе, для сравнения вариантов):
-   *   dot  — круг: размер по всем задачам, цвет «сегодня» / «раньше» (по умолчанию);
-   *   core — серый круг по всем задачам и оранжевое ядро по сегодняшним;
+   * Вид точки. Основной — core: серый круг по всем задачам за три дня и оранжевое ядро
+   * по сегодняшним. В архиве (включаются параметром ?points=… в адресе):
+   *   dot  — круг: размер по всем задачам, цвет «сегодня» / «раньше»;
    *   pie  — сектора: доля задач сегодня / вчера / позавчера;
    *   ring — кольцо из дуг по дням, центр оранжевый, если место есть сегодня.
    */
-  const POINT_STYLES = ['dot', 'core', 'pie', 'ring'];
+  const POINT_STYLES = ['core', 'dot', 'pie', 'ring'];
+  const DEFAULT_POINT_STYLE = 'core';
   let pointStyle = (() => {
     const v = new URLSearchParams(location.search).get('points');
-    return POINT_STYLES.includes(v) ? v : 'dot';
+    return POINT_STYLES.includes(v) ? v : DEFAULT_POINT_STYLE;
   })();
+  document.documentElement.dataset.points = pointStyle;   // легенда показывает пояснение к этому виду
 
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
@@ -464,7 +466,12 @@
       baseDirty = dirty = true;
     },
     hide() { el.box.hidden = true; },
-    setPointStyle(v) { if (POINT_STYLES.includes(v)) { pointStyle = v; dirty = true; } },
+    setPointStyle(v) {
+      if (!POINT_STYLES.includes(v)) return;
+      pointStyle = v;
+      document.documentElement.dataset.points = v;
+      dirty = true;
+    },
     get pointStyle() { return pointStyle; },
     // для проверки без видимой вкладки (rAF в фоне не крутится)
     redraw(t) { draw(t == null ? 0 : t); },

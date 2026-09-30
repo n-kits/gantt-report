@@ -98,10 +98,15 @@
         </div>
         <div id="geo-tip" class="geo-tip" hidden></div>
       </div>
+      <!-- пояснение к точкам — под текущий вид (?points=…, по умолчанию core) -->
       <p class="legend geo-legend">
-        <span class="gdot today"></span>сегодня (с 04:00)
-        <span class="gdot old"></span>вчера и позавчера.
-        Размер точки — число задач с этим топонимом, пунктирный ободок — координаты приблизительные.
+        <span data-for="core"><span class="gdot core"></span>серый круг — все задачи с этим топонимом за три дня,
+          оранжевое ядро — из них сегодня (с 04:00); без ядра — только вчера и позавчера.</span>
+        <span data-for="dot"><span class="gdot today"></span>сегодня (с 04:00) <span class="gdot old"></span>вчера и позавчера.
+          Размер точки — число задач с этим топонимом.</span>
+        <span data-for="pie ring">Размер — все задачи за три дня; доли по дням:
+          <span class="gdot today"></span>сегодня <span class="gdot old"></span>вчера <span class="gdot old2"></span>позавчера.</span>
+        Пунктирный ободок — координаты приблизительные.
         <span class="sw" style="background:var(--map-country-today);box-shadow:inset 0 0 0 1px var(--map-country-today-line)"></span>страна сегодня
         <span class="sw" style="background:var(--map-country-old)"></span>страна раньше.
         Колесо мыши — масштаб, перетаскивание — сдвиг.

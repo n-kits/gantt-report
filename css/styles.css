@@ -263,9 +263,9 @@ table.tl {
   --map-sea: #E6EDF1;                          /* море и фон за картой */
   --map-land: #FAF8F3;                         /* суша */
   --map-border: #C9C3B6;                       /* границы стран и береговая линия */
-  --map-today: #C45C26;                        /* точка «сегодня» и её пульс */
-  --map-old: #8A919C;                          /* точка «вчера–позавчера» */
-  --map-old-opacity: .75;                      /* её непрозрачность (0…1) */
+  --map-today: #C45C26;                        /* оранжевое ядро точки (задачи сегодня) и его пульс */
+  --map-old: #8A919C;                          /* серый круг точки (все задачи за три дня) */
+  --map-old-opacity: .75;                      /* его непрозрачность (0…1) */
   --map-old2: #C3C8CF;                         /* «позавчера» — в вариантах точек «сектора» и «кольцо» */
   --map-halo: #FFFFFF;                         /* белый ободок вокруг точек */
   --map-hover: #1F2937;                        /* кольцо вокруг точки под курсором */
@@ -299,6 +299,16 @@ table.tl {
 .geo-legend .gdot { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 8px; border-radius: 50%; vertical-align: -1px; }
 .geo-legend .gdot.today { background: var(--map-today); }
 .geo-legend .gdot.old { background: var(--map-old); opacity: var(--map-old-opacity); }
+.geo-legend .gdot.old2 { background: var(--map-old2); }
+/* «две точки в одной»: серый круг и оранжевое ядро */
+.geo-legend .gdot.core { width: 13px; height: 13px; vertical-align: -3px;
+  background: radial-gradient(circle, var(--map-today) 0 3.5px, #fff 3.5px 4.5px, var(--map-old) 4.5px); }
+/* в легенде — только пояснение к текущему виду точек (data-points ставит js/map/geo-map.js) */
+.geo-legend [data-for] { display: none; }
+html[data-points="core"] .geo-legend [data-for~="core"],
+html[data-points="dot"] .geo-legend [data-for~="dot"],
+html[data-points="pie"] .geo-legend [data-for~="pie"],
+html[data-points="ring"] .geo-legend [data-for~="ring"] { display: inline; }
 
 /* Сводная таблица «Задачи и топонимы» */
 .geo-h2 { margin: 20px 0 4px; font-size: 16px; color: var(--header); }
