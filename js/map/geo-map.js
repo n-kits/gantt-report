@@ -17,7 +17,6 @@
     sea: '#E6EDF1',
     land: '#FAF8F3',
     border: '#C9C3B6',
-    outline: '#C9C3B6',
     today: '#C45C26',
     old: '#8A919C',
     oldOpacity: 0.75,
@@ -68,7 +67,7 @@
 
   let W = 0, H = 0, dpr = 1;
   let k = 1, k0 = 1, tx = 0, ty = 0;           // экран = база * k + (tx, ty)
-  let basemap = null;                           // { paths: Map iso → Path2D, land: Path2D, outline: Path2D }
+  let basemap = null;                           // { paths: Map iso → Path2D, land: Path2D }
   let basemapLoading = null;
   let data = { points: [], countries: [] };
   let proj = [];                                // точки в базовых координатах
@@ -98,11 +97,7 @@
           land.addPath(p);
           paths.set(c.iso, { path: p, name: c.name, bbox: bboxOf(c.polys) });
         }
-        const outline = new Path2D();
-        for (let la = -90; la <= 90; la += 3) { const q = P(-180, la); la === -90 ? outline.moveTo(q[0], q[1]) : outline.lineTo(q[0], q[1]); }
-        for (let la = 90; la >= -90; la -= 3) { const q = P(180, la); outline.lineTo(q[0], q[1]); }
-        outline.closePath();
-        basemap = { land, paths, outline };
+        basemap = { land, paths };
         if (!userMoved) fit();
         baseDirty = dirty = true;
       })
@@ -218,9 +213,6 @@
       const e = basemap.paths.get(hover.iso);
       if (e) { ctx.lineWidth = 2 / k; ctx.strokeStyle = COLORS.today; ctx.stroke(e.path); }
     }
-    ctx.lineWidth = 1 / k;
-    ctx.strokeStyle = COLORS.outline;
-    ctx.stroke(basemap.outline);
   }
 
   function draw(t) {

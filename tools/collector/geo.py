@@ -28,7 +28,8 @@ HERE = Path(__file__).resolve().parent
 BASEMAP_PATH = HERE.parent.parent / "data" / "basemap.json"
 
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
-MAX_TEXT = 4000            # символов описания в LLM
+MAX_TEXT = 4000
+MAX_ATTEMPTS = 3          # попыток анализа одной задачи            # символов описания в LLM
 BATCH_SIZE = 8             # задач в одном запросе
 KEEP_DAYS = 7              # сколько помнить задачи, пропавшие из выборки
 NOMINATIM_PAUSE = 1.1      # правило Nominatim: не чаще 1 запроса в секунду
@@ -408,9 +409,21 @@ def pending(state: dict, res: dict) -> list[dict]:
     for row, t in zip(res["rows"], res.get("tasks", [])):
         h = task_hash(row[0], t["description"])
         st = state["tasks"].get(t["id"])
-        if not st or st.get("hash") != h or "result" not in st:
-            out.append({"id": t["id"], "name": row[0], "url": t["url"], "preview": t["description"], "hash": h})
+        if st and st.get("hash") == h and ("result" in st or not retry_due(st)):
+            continue
+        out.append({"id": t["id"], "name": row[0], "url": t["url"], "preview": t["description"], "hash": h})
     return out
+
+
+def retry_due(st: dict) -> bool:
+    """Неудачный анализ (отказ модели, сбой API) повторяем через 1, 2 ч и бросаем после 3 попыток."""
+    n = st.get("attempts", 0)
+    if n >= MAX_ATTEMPTS:
+        return False
+    try:
+        return datetime.now() >= datetime.fromisoformat(st["failedAt"]) + timedelta(hours=n)
+    except (KeyError, ValueError):
+        return True
 
 
 def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
@@ -469,6 +482,13 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
             if t["id"] in results:
                 state["tasks"][t["id"]] = {"hash": t["hash"], "result": results[t["id"]], "analyzedAt": now,
                                            "model": cfg.get("llm_model")}
+            else:
+                prev = state["tasks"].get(t["id"]) or {}
+                n = prev.get("attempts", 0) + 1 if prev.get("hash") == t["hash"] else 1
+                state["tasks"][t["id"]] = {"hash": t["hash"], "failedAt": now, "attempts": n,
+                                           "seen": prev.get("seen") or datetime.now().date().isoformat()}
+                if n >= MAX_ATTEMPTS:
+                    log.warning("Задача %s: анализ не удался %s раз — больше не пробуем", t["id"], n)
 
     cache = GeoCache(app_dir / "geocache.json")
     coder = Geocoder(cache)
@@ -479,6 +499,8 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
         if not st:
             continue
         st["seen"] = today
+        if "result" not in st:          # анализ не удался — в карту и таблицу не попадает
+            continue
         r = st.get("result") or {}
         tops = [p for p in (published(x, coder.resolve(x)) for x in r.get("toponyms", [])) if p]
         items.append({"id": t["id"], "start": row[2], "themes": r.get("themes", []),
