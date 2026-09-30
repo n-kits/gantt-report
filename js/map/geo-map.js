@@ -19,6 +19,7 @@
     border: '#C9C3B6',
     today: '#C45C26',
     old: '#8A919C',
+    old2: '#C3C8CF',
     oldOpacity: 0.75,
     halo: '#FFFFFF',
     hover: '#1F2937',
@@ -28,6 +29,19 @@
     countryOldLine: 'rgba(107, 114, 128, .55)',
   };
   const PULSE_MS = 2400;
+
+  /*
+   * Вид точки (?points=… в адресе, для сравнения вариантов):
+   *   dot  — круг: размер по всем задачам, цвет «сегодня» / «раньше» (по умолчанию);
+   *   core — серый круг по всем задачам и оранжевое ядро по сегодняшним;
+   *   pie  — сектора: доля задач сегодня / вчера / позавчера;
+   *   ring — кольцо из дуг по дням, центр оранжевый, если место есть сегодня.
+   */
+  const POINT_STYLES = ['dot', 'core', 'pie', 'ring'];
+  let pointStyle = (() => {
+    const v = new URLSearchParams(location.search).get('points');
+    return POINT_STYLES.includes(v) ? v : 'dot';
+  })();
 
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
@@ -234,29 +248,89 @@
       const sx = p.x * k + tx, sy = p.y * k + ty;
       const r = G.radius(p.count);
       if (sx < -r * 4 || sy < -r * 4 || sx > W + r * 4 || sy > H + r * 4) continue;
-      const color = p.today ? COLORS.today : COLORS.old;
-      if (p.today && phase != null) {
-        // расходящееся и тающее кольцо, как у зелёной точки «живых данных»
-        const e = 1 - Math.pow(1 - Math.min(1, phase / 0.7), 3);
-        ctx.globalAlpha = 0.5 * (1 - e);
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(sx, sy, r * (1 + 1.6 * e), 0, 2 * Math.PI); ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      ctx.globalAlpha = p.today ? 1 : COLORS.oldOpacity;
-      ctx.fillStyle = color;
-      ctx.strokeStyle = COLORS.halo;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+      drawPoint(p, sx, sy, r, phase);
       if (p.approx) {            // приблизительные координаты — пунктирный ободок
-        ctx.setLineDash([2, 2]); ctx.strokeStyle = color; ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]); ctx.strokeStyle = p.today ? COLORS.today : COLORS.old; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(sx, sy, r + 3, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
       }
-      ctx.globalAlpha = 1;
       if (hover && hover.key === p.key) {
         ctx.strokeStyle = COLORS.hover; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(sx, sy, r + 3, 0, 2 * Math.PI); ctx.stroke();
       }
+    }
+  }
+
+  // расходящееся и тающее кольцо, как у зелёной точки «живых данных»
+  function pulse(sx, sy, r, phase) {
+    if (phase == null) return;
+    const e = 1 - Math.pow(1 - Math.min(1, phase / 0.7), 3);
+    ctx.globalAlpha = 0.5 * (1 - e);
+    ctx.fillStyle = COLORS.today;
+    ctx.beginPath(); ctx.arc(sx, sy, r * (1 + 1.6 * e), 0, 2 * Math.PI); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function disc(sx, sy, r, color, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function halo(sx, sy, r, width) {
+    ctx.strokeStyle = COLORS.halo;
+    ctx.lineWidth = width || 1.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI); ctx.stroke();
+  }
+
+  const DAY_COLORS = () => [COLORS.today, COLORS.old, COLORS.old2];
+
+  function drawPoint(p, sx, sy, r, phase) {
+    const d = p.byDay || [p.today ? p.count : 0, p.today ? 0 : p.count, 0];
+    if (pointStyle === 'core') {
+      // серый круг — все задачи за три дня, оранжевое ядро — сегодняшние
+      disc(sx, sy, r, COLORS.old, COLORS.oldOpacity);
+      halo(sx, sy, r);
+      if (d[0]) {
+        const rc = Math.min(r, G.radius(d[0]));
+        pulse(sx, sy, rc, phase);
+        disc(sx, sy, rc, COLORS.today, 1);
+        if (rc < r) halo(sx, sy, rc, 1);
+      }
+    } else if (pointStyle === 'pie') {
+      // сектора по дням, от 12 часов по часовой стрелке: сегодня, вчера, позавчера
+      if (p.today) pulse(sx, sy, r, phase);
+      const colors = DAY_COLORS();
+      let a = -Math.PI / 2;
+      for (let i = 0; i < 3; i++) {
+        if (!d[i]) continue;
+        const b = a + 2 * Math.PI * d[i] / p.count;
+        ctx.fillStyle = colors[i];
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.arc(sx, sy, r, a, b); ctx.closePath(); ctx.fill();
+        a = b;
+      }
+      halo(sx, sy, r);
+    } else if (pointStyle === 'ring') {
+      // дуги по дням по краю, центр — оранжевый, если место есть сегодня
+      if (p.today) pulse(sx, sy, r, phase);
+      const w = Math.max(2.5, r * 0.42);
+      const colors = DAY_COLORS();
+      disc(sx, sy, r, COLORS.halo, 1);
+      let a = -Math.PI / 2;
+      ctx.lineWidth = w;
+      for (let i = 0; i < 3; i++) {
+        if (!d[i]) continue;
+        const b = a + 2 * Math.PI * d[i] / p.count;
+        ctx.strokeStyle = colors[i];
+        ctx.beginPath(); ctx.arc(sx, sy, r - w / 2, a, b); ctx.stroke();
+        a = b;
+      }
+      disc(sx, sy, Math.max(1.5, r - w - 1), p.today ? COLORS.today : COLORS.old, p.today ? 1 : COLORS.oldOpacity);
+      halo(sx, sy, r);
+    } else {
+      pulse(sx, sy, r, p.today ? phase : null);
+      disc(sx, sy, r, p.today ? COLORS.today : COLORS.old, p.today ? 1 : COLORS.oldOpacity);
+      halo(sx, sy, r);
     }
   }
 
@@ -390,6 +464,8 @@
       baseDirty = dirty = true;
     },
     hide() { el.box.hidden = true; },
+    setPointStyle(v) { if (POINT_STYLES.includes(v)) { pointStyle = v; dirty = true; } },
+    get pointStyle() { return pointStyle; },
     // для проверки без видимой вкладки (rAF в фоне не крутится)
     redraw(t) { draw(t == null ? 0 : t); },
     whenReady: () => basemapLoading,

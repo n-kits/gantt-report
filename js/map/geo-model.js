@@ -26,9 +26,10 @@
   const normName = s => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 
   /*
-   * → { points: [{ key, name, lat, lon, count, today, approx }],
-   *     countries: [{ iso, name, count, today }] }
-   * count — число разных задач с этим топонимом; today — есть хотя бы одна сегодняшняя.
+   * → { points: [{ key, name, lat, lon, count, today, byDay, approx }],
+   *     countries: [{ iso, name, count, today, byDay }] }
+   * count — число разных задач с этим топонимом; today — есть хотя бы одна сегодняшняя;
+   * byDay — [сегодня, вчера, позавчера и раньше] — задач по рабочим дням (сутки с 04:00).
    * Одинаковые топонимы сливаются по названию (без регистра, ё = е) и близким координатам.
    */
   function aggregate(geo, now) {
@@ -38,17 +39,19 @@
     for (const it of (geo && geo.items) || []) {
       const start = parseStart(it.start);
       const today = !!start && start >= from;
+      // 0 — сегодня, 1 — вчера, 2 — позавчера (и всё, что раньше)
+      const day = today ? 0 : start ? Math.min(2, 1 + Math.floor((from - start) / 86400000)) : 2;
       const seen = new Set();   // один топоним дважды в одной задаче считаем один раз
       for (const t of it.toponyms || []) {
         let key, bucket, init;
         if (t.kind === 'country' && t.iso) {
           key = t.iso;
           bucket = countries;
-          init = () => ({ iso: t.iso, name: t.name, count: 0, today: false });
+          init = () => ({ iso: t.iso, name: t.name, count: 0, today: false, byDay: [0, 0, 0] });
         } else if (Number.isFinite(t.lat) && Number.isFinite(t.lon)) {
           key = `${normName(t.name)}|${t.lat.toFixed(1)}|${t.lon.toFixed(1)}`;
           bucket = points;
-          init = () => ({ key, name: t.name, lat: t.lat, lon: t.lon, count: 0, today: false, approx: !!t.approx });
+          init = () => ({ key, name: t.name, lat: t.lat, lon: t.lon, count: 0, today: false, byDay: [0, 0, 0], approx: !!t.approx });
         } else {
           continue;
         }
@@ -57,6 +60,7 @@
         if (!bucket.has(key)) bucket.set(key, init());
         const x = bucket.get(key);
         x.count++;
+        x.byDay[day]++;
         x.today = x.today || today;
         if (bucket === points && !t.approx) x.approx = false;
       }
