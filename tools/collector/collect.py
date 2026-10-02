@@ -71,6 +71,7 @@ DEFAULTS = {
     "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив
     "publish_days": True,       # архив по дням в ветку data (days/ГГГГ-ММ-ДД.json, зашифровано) — календарик на сайте
     "refresh_days": 14,         # раз в сутки перечитывать столько закрытых дней: на сайте и в Excel — текущие статусы
+    "history_url": None,        # пресет Bitrix для --backfill и обновления, без ограничения по давности; None — tasks_url
     "chunk_days": 3,            # --backfill и обновление ходят в Bitrix кусками по столько суток
     "chunk_pause_sec": 3,       # пауза между кусками
 }
@@ -152,7 +153,7 @@ def fmt_bx(dt: datetime) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
-def range_url(cfg: dict, frm: datetime, to: datetime) -> str:
+def range_url(cfg: dict, frm: datetime, to: datetime, base: str | None = None) -> str:
     params = {
         "FILTER_DATE_AFTER_RANGE": fmt_bx(frm),
         "FILTER_DATE_BEFORE_RANGE": fmt_bx(to),
@@ -160,8 +161,9 @@ def range_url(cfg: dict, frm: datetime, to: datetime) -> str:
         "FILTER_DATE_OPTION_VALUE_RANGE": "created_date",
         "SHOWALL_1": "1",
     }
-    sep = "&" if "?" in cfg["tasks_url"] else "?"
-    return cfg["tasks_url"] + sep + "&".join(f"{k}={quote(v)}" for k, v in params.items())
+    base = base or cfg["tasks_url"]
+    sep = "&" if "?" in base else "?"
+    return base + sep + "&".join(f"{k}={quote(v)}" for k, v in params.items())
 
 
 # ---------------------------------------------------------------------------
@@ -207,9 +209,9 @@ def parse_page(page) -> dict:
     return res
 
 
-def open_range(page, cfg: dict, frm: datetime, to: datetime) -> dict:
+def open_range(page, cfg: dict, frm: datetime, to: datetime, base: str | None = None) -> dict:
     """Список задач Bitrix с фильтром «дата создания» от frm до to → результат разбора."""
-    url = range_url(cfg, frm, to)
+    url = range_url(cfg, frm, to, base)
     log.info("Открываю %s", url)
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
     page.wait_for_load_state("networkidle", timeout=60_000)
@@ -271,8 +273,10 @@ def day_chunks(cfg: dict, d_from: date, d_to: date, now: datetime) -> list[tuple
 
 
 def sync_days(cfg: dict, db, d_from: date, d_to: date, lock: "Lock | None" = None) -> list[str]:
-    """Перечитать из Bitrix рабочие дни d_from…d_to кусками: текущие статусы в архив,
-    исчезнувшие из Bitrix задачи — из архива. Возвращает перечитанные дни."""
+    """Перечитать из Bitrix рабочие дни d_from…d_to кусками (history_url): текущие статусы в архив.
+    Задачи, которых Bitrix за прошлые дни не вернул, НЕ удаляются: пресет может не показывать
+    старые задачи (у «ВСЕ КАРТЫ Р24» горизонт ~5 суток) — неполная выдача не должна стирать архив.
+    Возвращает дни, за которые Bitrix вернул хоть одну задачу."""
     import archive
     from playwright.sync_api import sync_playwright
 
@@ -285,12 +289,14 @@ def sync_days(cfg: dict, db, d_from: date, d_to: date, lock: "Lock | None" = Non
             for k, (frm, to, days) in enumerate(chunks):
                 if k:
                     time.sleep(cfg["chunk_pause_sec"])     # не нагружаем Bitrix
-                res = open_range(page, cfg, frm, to)
+                res = open_range(page, cfg, frm, to, cfg.get("history_url"))
                 archive.update(db, cfg, res, None, {})
-                gone = archive.prune(db, days, {t["id"] for t in res.get("tasks", [])})
-                if gone:
-                    log.info("Архив: за %s — %s удалено (нет в Bitrix)", ", ".join(days), gone)
-                done += days
+                seen = {t["id"] for t in res.get("tasks", [])}
+                missing = archive.missing(db, days, seen)
+                if missing:
+                    log.warning("Архив: за %s Bitrix не вернул %s задач из архива — оставлены как есть",
+                                ", ".join(days), missing)
+                done += sorted({archive.workday(r[2], cfg["day_start_hour"]) for r in res["rows"]} & set(days))
                 if lock:
                     lock.touch()
         finally:
