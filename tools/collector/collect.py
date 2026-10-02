@@ -13,6 +13,7 @@
     python collect.py --import-geocache in/analyze_geocode/geocache.geojson   # заполнить кэш координат
     python collect.py --export-day 2026-09-27   # выгрузить день из локального архива в Excel вручную
     python collect.py --llm off|on|status       # «стоп» для LLM: лента строится, новые задачи не анализируются
+    python collect.py --backfill 2026-01-01 [2026-09-30]   # догрузить дни из Bitrix в архив (календарик на сайте)
 
 Всё локальное (настройки, профиль Edge, журнал) — в %LOCALAPPDATA%\\gantt-collector.
 Зависимости: playwright, cryptography; браузер — установленный Microsoft Edge.
@@ -23,13 +24,14 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
+import hashlib
 import json
 import logging
 import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import quote
@@ -67,6 +69,10 @@ DEFAULTS = {
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
     "archive": True,            # локальный архив задач (archive.sqlite) и выгрузка выпавших дней в Excel
     "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив
+    "publish_days": True,       # архив по дням в ветку data (days/ГГГГ-ММ-ДД.json, зашифровано) — календарик на сайте
+    "refresh_days": 14,         # раз в сутки перечитывать столько закрытых дней: на сайте и в Excel — текущие статусы
+    "chunk_days": 3,            # --backfill и обновление ходят в Bitrix кусками по столько суток
+    "chunk_pause_sec": 3,       # пауза между кусками
 }
 
 log = logging.getLogger("collector")
@@ -108,7 +114,11 @@ def save_config(cfg: dict) -> None:
 
 
 class Lock:
-    """Не даём двум запускам (Планировщик + ручной) работать одновременно."""
+    """Не даём двум запускам (Планировщик + ручной) работать одновременно.
+    Блокировка старше 15 минут считается брошенной — долгие запуски (--backfill) её обновляют."""
+
+    def touch(self):
+        LOCK_PATH.write_text(str(os.getpid()))
 
     def __enter__(self):
         APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -197,36 +207,42 @@ def parse_page(page) -> dict:
     return res
 
 
+def open_range(page, cfg: dict, frm: datetime, to: datetime) -> dict:
+    """Список задач Bitrix с фильтром «дата создания» от frm до to → результат разбора."""
+    url = range_url(cfg, frm, to)
+    log.info("Открываю %s", url)
+    page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+    page.wait_for_load_state("networkidle", timeout=60_000)
+
+    # Если сервер не принял диапазон из адреса — отправляем форму, как человек
+    got = page.evaluate(EVAL_RANGE)
+    if got["after"] and got["after"] != fmt_bx(frm):
+        log.info("Диапазон из адреса не применился (%s) — отправляю форму", got)
+        with page.expect_navigation(timeout=90_000):
+            page.evaluate(EVAL_SUBMIT_RANGE, [fmt_bx(frm), fmt_bx(to)])
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        got = page.evaluate(EVAL_RANGE)
+
+    res = parse_page(page)
+    if got["after"] and got["after"] != fmt_bx(frm):
+        raise CollectError("RANGE_NOT_APPLIED", f"Не удалось выставить диапазон: на странице {got}")
+    if res.get("hasNextPage"):
+        raise CollectError("PAGINATED", "Список разбит на страницы — включите «показать все» в Bitrix")
+    res["range"] = {"from": fmt_bx(frm), "to": fmt_bx(to)}
+    log.info("Задач: %s, диапазон %s — %s, время Bitrix %s", res["count"], *res["range"].values(), res["now"])
+    return res
+
+
 def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
     from playwright.sync_api import sync_playwright
 
     now = bitrix_now(cfg)
     frm, to = date_range(cfg, now)
-    url = range_url(cfg, frm, to)
     with sync_playwright() as pw:
         ctx = open_context(pw, headless=True)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            log.info("Открываю %s", url)
-            page.goto(url, wait_until="domcontentloaded", timeout=90_000)
-            page.wait_for_load_state("networkidle", timeout=60_000)
-
-            # Если сервер не принял диапазон из адреса — отправляем форму, как человек
-            got = page.evaluate(EVAL_RANGE)
-            if got["after"] and got["after"] != fmt_bx(frm):
-                log.info("Диапазон из адреса не применился (%s) — отправляю форму", got)
-                with page.expect_navigation(timeout=90_000):
-                    page.evaluate(EVAL_SUBMIT_RANGE, [fmt_bx(frm), fmt_bx(to)])
-                page.wait_for_load_state("networkidle", timeout=60_000)
-                got = page.evaluate(EVAL_RANGE)
-
-            res = parse_page(page)
-            if got["after"] and got["after"] != fmt_bx(frm):
-                raise CollectError("RANGE_NOT_APPLIED", f"Не удалось выставить диапазон: на странице {got}")
-            if res.get("hasNextPage"):
-                raise CollectError("PAGINATED", "Список разбит на страницы — включите «показать все» в Bitrix")
-            res["range"] = {"from": fmt_bx(frm), "to": fmt_bx(to)}
-            log.info("Задач: %s, диапазон %s — %s, время Bitrix %s", res["count"], *res["range"].values(), res["now"])
+            res = open_range(page, cfg, frm, to)
             if geo_state is not None:
                 # полные описания новых задач — пока открыт браузер с сессией Bitrix
                 import geo
@@ -237,6 +253,49 @@ def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
             return res
         finally:
             ctx.close()
+
+
+def day_chunks(cfg: dict, d_from: date, d_to: date, now: datetime) -> list[tuple[datetime, datetime, list[str]]]:
+    """Рабочие дни d_from…d_to (сутки с 04:00) → куски по chunk_days: (от, до, [дни куска])."""
+    h, size = cfg["day_start_hour"], max(1, int(cfg["chunk_days"]))
+    out, d = [], d_from
+    while d <= d_to:
+        e = min(d + timedelta(days=size), d_to + timedelta(days=1))
+        frm = datetime.combine(d, dtime(h))
+        if frm >= now:
+            break
+        to = min(datetime.combine(e, dtime(h)), now)
+        out.append((frm, to, [(d + timedelta(days=i)).isoformat() for i in range((e - d).days)]))
+        d = e
+    return out
+
+
+def sync_days(cfg: dict, db, d_from: date, d_to: date, lock: "Lock | None" = None) -> list[str]:
+    """Перечитать из Bitrix рабочие дни d_from…d_to кусками: текущие статусы в архив,
+    исчезнувшие из Bitrix задачи — из архива. Возвращает перечитанные дни."""
+    import archive
+    from playwright.sync_api import sync_playwright
+
+    chunks = day_chunks(cfg, d_from, d_to, bitrix_now(cfg))
+    done: list[str] = []
+    with sync_playwright() as pw:
+        ctx = open_context(pw, headless=True)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            for k, (frm, to, days) in enumerate(chunks):
+                if k:
+                    time.sleep(cfg["chunk_pause_sec"])     # не нагружаем Bitrix
+                res = open_range(page, cfg, frm, to)
+                archive.update(db, cfg, res, None, {})
+                gone = archive.prune(db, days, {t["id"] for t in res.get("tasks", [])})
+                if gone:
+                    log.info("Архив: за %s — %s удалено (нет в Bitrix)", ", ".join(days), gone)
+                done += days
+                if lock:
+                    lock.touch()
+        finally:
+            ctx.close()
+    return done
 
 
 def interactive_login(cfg: dict) -> None:
@@ -286,21 +345,67 @@ def git(*args: str, cwd: Path = DATA_REPO) -> str:
     return r.stdout.strip()
 
 
-def publish(cfg: dict, envelope: dict) -> None:
+def write_days(db, out_dir: Path, password: str, iterations: int, hashes_path: Path | None = None) -> int:
+    """Архив по дням для календарика: days/ГГГГ-ММ-ДД.json (строки дня, зашифровано тем же паролем)
+    и открытый days/index.json — только даты и время последней сверки с Bitrix.
+    Файл дня переписывается, только если изменились его строки. Возвращает число переписанных."""
+    import archive
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        hashes = json.loads(hashes_path.read_text(encoding="utf-8")) if hashes_path else {}
+    except (OSError, ValueError):
+        hashes = {}
+    salt = hashlib.sha256(f"{password}\0{iterations}".encode("utf-8")).hexdigest()   # смена пароля → перешифровать всё
+    index, changed = {}, 0
+    for day, checked in archive.days_checked(db):
+        rows = archive.day_rows(db, day)
+        h = hashlib.sha256((salt + json.dumps(rows, ensure_ascii=False)).encode("utf-8")).hexdigest()
+        f = out_dir / f"{day}.json"
+        if hashes.get(day) != h or not f.exists():
+            enc = encrypt({"day": day, "rows": rows}, password, iterations)
+            f.write_text(json.dumps({"v": 1, "day": day, "enc": enc}, ensure_ascii=False), encoding="utf-8")
+            hashes[day] = h
+            changed += 1
+        index[day] = checked
+    for f in out_dir.glob("????-??-??.json"):
+        if f.stem not in index:              # все задачи дня ушли из Bitrix
+            f.unlink()
+            hashes.pop(f.stem, None)
+    (out_dir / "index.json").write_text(
+        json.dumps({"v": 1, "updatedAt": utc_now_iso(), "days": index}, ensure_ascii=False, indent=0), encoding="utf-8")
+    if hashes_path:
+        hashes_path.write_text(json.dumps(hashes), encoding="utf-8")
+    return changed
+
+
+def publish_days(cfg: dict) -> None:
+    import archive
+    db = archive.connect(APP_DIR / "archive.sqlite")
+    try:
+        n = write_days(db, DATA_REPO / "days", cfg["password"], cfg["kdf_iterations"], APP_DIR / "days-published.json")
+    finally:
+        db.close()
+    if n:
+        log.info("Архив по дням: переписано файлов %s", n)
+
+
+def publish(cfg: dict, envelope: dict | None) -> None:
+    """envelope=None — live.json не трогаем (публикуется только архив по дням)."""
     if not (DATA_REPO / ".git").exists():
         DATA_REPO.mkdir(parents=True, exist_ok=True)
         git("init", "-q")
         git("remote", "add", "origin", cfg["git_remote"])
         git("config", "user.name", "gantt-collector")
         git("config", "user.email", "gantt-collector@users.noreply.github.com")
-    (DATA_REPO / cfg["data_file"]).write_text(json.dumps(envelope, ensure_ascii=False, indent=1), encoding="utf-8")
+    if envelope is not None:
+        (DATA_REPO / cfg["data_file"]).write_text(json.dumps(envelope, ensure_ascii=False, indent=1), encoding="utf-8")
     (DATA_REPO / "README.md").write_text(
-        "Служебная ветка: зашифрованные данные «живой» ленты. Перезаписывается сборщиком "
-        "(tools/collector/collect.py), истории нет.\n", encoding="utf-8")
+        "Служебная ветка: зашифрованные данные «живой» ленты (live.json) и архив по дням (days/). "
+        "Перезаписывается сборщиком (tools/collector/collect.py), истории нет.\n", encoding="utf-8")
     git("add", "-A")
     # всегда один коммит без родителей: история данных не копится
     tree = git("write-tree")
-    commit = git("commit-tree", tree, "-m", f"data {envelope['generatedAt']}")
+    commit = git("commit-tree", tree, "-m", f"data {envelope['generatedAt'] if envelope else utc_now_iso()}")
     git("push", "-f", "-q", "origin", f"{commit}:refs/heads/{cfg['data_branch']}")
     log.info("Опубликовано в ветку %s", cfg["data_branch"])
 
@@ -321,7 +426,7 @@ def run(cfg: dict, dry_run: bool) -> int:
     envelope = {"v": 1, "generatedAt": utc_now_iso(), "intervalMin": cfg["interval_min"], "source": cfg["source_name"]}
     code = 0
     try:
-        with Lock():
+        with Lock() as lock:
             geo_state = load_geo_state() if cfg.get("geo") else None
             res = fetch_tasks(cfg, geo_state)
             geo_part = None
@@ -334,6 +439,10 @@ def run(cfg: dict, dry_run: bool) -> int:
             if cfg.get("archive"):
                 try:
                     save_archive(cfg, res, geo_part)
+                    if not dry_run:
+                        refresh_closed(cfg, res, lock)
+                        if cfg.get("publish_days"):
+                            publish_days(cfg)
                 except Exception:  # noqa: BLE001 — архив не должен мешать публикации
                     log.exception("Архив не обновлён")
         payload = {"rows": res["rows"], "now": res["now"], "range": res["range"], "sourceName": cfg["source_name"]}
@@ -402,10 +511,68 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
     try:
         n = archive.update(db, cfg, res, geo_part, texts)
         frm = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M")
+        # дни окна перечитаны целиком — задачи, пропавшие из Bitrix, убираем
+        days = [(frm.date() + timedelta(days=i)).isoformat() for i in range(cfg["days"])]
+        gone = archive.prune(db, days, {t["id"] for t in res.get("tasks", [])})
         archive.export_closed(db, cfg, frm, archive.archive_dir(cfg))
-        log.info("Архив: обновлено задач %s", n)
+        log.info("Архив: обновлено задач %s%s", n, f", удалено (нет в Bitrix) {gone}" if gone else "")
     finally:
         db.close()
+
+
+def refresh_closed(cfg: dict, res: dict, lock: Lock) -> None:
+    """Раз в сутки перечитать refresh_days закрытых дней перед окном: статусы на сайте и в Excel — текущие."""
+    import archive
+    n = int(cfg.get("refresh_days") or 0)
+    frm = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M")
+    first = frm.date()
+    state_path = APP_DIR / "refresh.json"
+    try:
+        if json.loads(state_path.read_text(encoding="utf-8")).get("day") == first.isoformat():
+            return
+    except (OSError, ValueError):
+        pass
+    if n > 0:
+        log.info("Обновление статусов: %s закрытых дней", n)
+        db = archive.connect(APP_DIR / "archive.sqlite")
+        try:
+            days = sync_days(cfg, db, first - timedelta(days=n), first - timedelta(days=1), lock)
+            archive.reexport(db, cfg, days, frm, archive.archive_dir(cfg))
+        finally:
+            db.close()
+    state_path.write_text(json.dumps({"day": first.isoformat(), "at": utc_now_iso()}), encoding="utf-8")
+
+
+def backfill(cfg: dict, d_from: date, d_to: date) -> int:
+    """Догрузить из Bitrix рабочие дни d_from…d_to (текущие статусы) и опубликовать архив по дням."""
+    import archive
+    if not cfg.get("password"):
+        log.error("Не задан пароль шифрования — запустите: python collect.py --setup")
+        return 2
+    code = 0
+    with Lock() as lock:
+        db = archive.connect(APP_DIR / "archive.sqlite")
+        try:
+            chunks = day_chunks(cfg, d_from, d_to, bitrix_now(cfg))
+            log.info("Догрузка %s — %s: кусков %s", d_from, d_to, len(chunks))
+            days: list[str] = []
+            try:
+                days = sync_days(cfg, db, d_from, d_to, lock)
+            except CollectError as e:
+                log.error("%s: %s — догружено то, что успели", e.code, e)
+                code = 3 if e.code == "LOGIN_REQUIRED" else 1
+            window_from, _ = date_range(cfg, bitrix_now(cfg))
+            archive.reexport(db, cfg, days, window_from, archive.archive_dir(cfg))
+            n = write_days(db, DATA_REPO / "days", cfg["password"], cfg["kdf_iterations"], APP_DIR / "days-published.json")
+            log.info("Догружено дней %s, файлов архива переписано %s", len(days), n)
+        finally:
+            db.close()
+    try:
+        publish(cfg, None)
+    except CollectError as e:
+        log.error("%s: %s", e.code, e)
+        return 1
+    return code
 
 
 def load_geo_state() -> dict:
@@ -459,6 +626,8 @@ def main(argv=None) -> int:
     g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
     g.add_argument("--export-day", metavar="ГГГГ-ММ-ДД", help="выгрузить день из архива в Excel (заново)")
     g.add_argument("--llm", choices=["on", "off", "status"], help="включить / выключить анализ задач через Claude")
+    g.add_argument("--backfill", nargs="+", metavar="ГГГГ-ММ-ДД",
+                   help="догрузить рабочие дни из Bitrix в архив и на сайт: С [ПО] (по умолчанию — по сегодня)")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -490,6 +659,22 @@ def main(argv=None) -> int:
             db.close()
         print(p or f"За {args.export_day} в архиве задач нет")
         return 0
+    if args.backfill:
+        if len(args.backfill) > 2:
+            p.error("--backfill: одна или две даты")
+        try:
+            d_from = date.fromisoformat(args.backfill[0])
+            today = (bitrix_now(cfg) - timedelta(hours=cfg["day_start_hour"])).date()
+            d_to = date.fromisoformat(args.backfill[1]) if len(args.backfill) > 1 else today
+        except ValueError:
+            p.error("--backfill: даты в виде ГГГГ-ММ-ДД")
+        if d_from > d_to:
+            p.error("--backfill: первая дата позже второй")
+        try:
+            return backfill(cfg, d_from, d_to)
+        except CollectError as e:
+            log.error("%s: %s", e.code, e)
+            return 1
     if args.remove_task:
         subprocess.run(["schtasks", "/Delete", "/F", "/TN", TASK_NAME], check=False)
         return 0

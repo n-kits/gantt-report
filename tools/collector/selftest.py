@@ -6,12 +6,14 @@
 на живой странице, шифруют паролем «test» и пишут tests/fixtures/live-sample.json.
 
 Сайт проверяет расшифровку этого файла: index.html?data=tests/fixtures/live-sample.json
+Рядом — архив по дням tests/fixtures/days/ (календарик «Период с» на той же странице).
 """
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import archive  # noqa: E402
 import collect  # noqa: E402
 
 from playwright.sync_api import sync_playwright  # noqa: E402
@@ -38,6 +40,17 @@ def main() -> int:
     }
     OUT.write_text(json.dumps(envelope, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"OK: {res['count']} задач, колонки {res['columns']}, записано {OUT}")
+
+    # архив по дням: те же задачи через SQLite в памяти → days/ГГГГ-ММ-ДД.json
+    db = archive.connect(":memory:")
+    archive.update(db, dict(collect.DEFAULTS), res, None, {})
+    days_dir = OUT.parent / "days"
+    for f in days_dir.glob("*.json"):
+        f.unlink()
+    collect.write_days(db, days_dir, "test", 1000)
+    days = [d for d, _ in archive.days_checked(db)]
+    assert sum(len(archive.day_rows(db, d)) for d in days) == res["count"]
+    print(f"OK: архив по дням {', '.join(days)} → {days_dir}")
     return 0
 
 

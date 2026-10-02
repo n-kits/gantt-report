@@ -13,7 +13,7 @@
   const DEFAULT_URL = 'https://raw.githubusercontent.com/n-kits/gantt-report/data/live.json';
   const POLL_MS = 5 * 60 * 1000;
   const PASS_KEY = 'gantt-live.pass';
-  const OFF_KEY = 'gantt-live.off';
+  const OFF_KEY = 'gantt-live.off';   // '1' — загружен файл; иначе подпись показанного периода архива
 
   const dataUrl = new URLSearchParams(location.search).get('data') || DEFAULT_URL;
 
@@ -74,13 +74,14 @@
   function renderBar() {
     if (!envelope) { el.bar.hidden = true; return; }
     el.bar.hidden = false;
-    const off = store.get(OFF_KEY) === '1';
+    const offVal = store.get(OFF_KEY);
+    const off = !!offVal;
     const needPass = !off && !store.get(PASS_KEY);
     el.form.hidden = !needPass;
     el.back.hidden = !off;
     el.bar.classList.toggle('ok', !off && envelope.status === 'ok');
     el.text.textContent = off
-      ? 'Показан загруженный файл.'
+      ? (offVal === '1' ? 'Показан загруженный файл.' : offVal)
       : `Живые данные Bitrix · на ${fmtTime(envelope.dataAt)} · обновление раз в ${envelope.intervalMin || 60} мин`;
   }
 
@@ -93,7 +94,7 @@
   }
 
   async function show(force) {
-    if (!envelope || !envelope.enc || store.get(OFF_KEY) === '1') return;
+    if (!envelope || !envelope.enc || store.get(OFF_KEY)) return;
     const password = store.get(PASS_KEY);
     if (!password) { renderBar(); return; }
     if (!force && shownKey === envelope.dataAt && App.kind === 'live') {
@@ -162,6 +163,14 @@
       App.showMsg('');
       renderBar();
     },
+    // показан период из архива (js/archive.js) — живые данные не перебивают его, пока не вернутся к ним
+    onArchiveShown(label) {
+      store.set(OFF_KEY, label);
+      if (root.GanttMap) root.GanttMap.hide();
+      renderBar();
+    },
+    password: () => store.get(PASS_KEY),
+    dataUrl,
     decrypt,
   };
 

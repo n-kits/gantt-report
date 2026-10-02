@@ -60,6 +60,12 @@ body { background: var(--page); min-height: 100vh; display: flex; flex-direction
 .btn.primary { background: var(--accent); border-color: var(--accent); }
 .btn.primary:hover { background: #b0501f; }
 
+/* --- Период из архива ---------------------------------------------------- */
+.period { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
+.period[hidden] { display: none; }
+.period .btn { padding: 0 10px; }
+#period-prev, #period-next { font-size: 16px; padding: 0 9px; }
+
 /* --- Живые данные -------------------------------------------------------- */
 .live {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;

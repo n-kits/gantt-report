@@ -13,7 +13,25 @@
       <p id="subtitle" class="subtitle"></p>
     </div>
     <div class="toolbar">
-      <label class="btn primary">
+      <!-- архив по дням из ветки data (js/archive.js); показывается, когда архив опубликован -->
+      <div id="period" class="period" hidden>
+        <label class="field">
+          <span>Период с</span>
+          <input id="period-from" type="date">
+        </label>
+        <label class="field">
+          <span>Дней</span>
+          <select id="period-len">
+            <option value="3">3</option>
+            <option value="2">2</option>
+            <option value="1">1</option>
+          </select>
+        </label>
+        <button id="period-prev" class="btn" type="button" title="На день раньше">‹</button>
+        <button id="period-next" class="btn" type="button" title="На день позже">›</button>
+        <button id="period-show" class="btn primary" type="button">Показать</button>
+      </div>
+      <label class="btn" title="Выгрузка из Bitrix (.xlsx) или сохранённая страница списка задач">
         Загрузить файл
         <input class="js-file" type="file" accept=".xlsx,.xlsm,.xls,.ods,.csv,.html,.htm" hidden>
       </label>
@@ -138,5 +156,6 @@
   <script src="js/map/geo-map.js"></script>
   <script src="js/map/geo-table.js"></script>
   <script src="js/live.js"></script>
+  <script src="js/archive.js"></script>
 </body>
 </html>

@@ -6,9 +6,10 @@
     archive.sqlite   — база (%LOCALAPPDATA%\\gantt-collector): задачи, анализ, топонимы
     <archive_dir>\\ГГГГ-ММ-ДД.xlsx — рабочий день (с 04:00 до 04:00), листы «Задачи» и «Топонимы»
 
-Каждый запуск обновляет задачи окна (статус, завершение, выполнение…), поэтому
-в архиве остаётся последнее состояние задачи на момент выпадения дня из окна.
-В публичный репозиторий архив не попадает.
+Каждый запуск обновляет задачи окна (статус, завершение, выполнение…); раз в сутки
+и по --backfill перечитываются и закрытые дни — в архиве текущие статусы из Bitrix.
+Сама база в репозиторий не попадает; на сайт уходят только строки ленты по дням,
+зашифрованные (collect.write_days → ветка data, days/).
 """
 from __future__ import annotations
 
@@ -104,6 +105,36 @@ def update(db: sqlite3.Connection, cfg: dict, res: dict, geo_part: dict | None, 
     return n
 
 
+def prune(db: sqlite3.Connection, days: list[str], seen: set[str]) -> int:
+    """Дни целиком перечитаны из Bitrix: задачи, которых там больше нет (удалены, ушли из фильтра), — убрать.
+    Если Bitrix вернул пусто, а в архиве за эти дни задачи есть, — ничего не трогаем (подозрительно)."""
+    if not days:
+        return 0
+    marks = ",".join("?" * len(days))
+    ids = [i for (i,) in db.execute(f"SELECT id FROM tasks WHERE day IN ({marks})", days)]
+    gone = [i for i in ids if i not in seen]
+    if not gone or (not seen and ids):
+        if gone:
+            log.warning("Архив: Bitrix вернул 0 задач за %s, в архиве %s — не удаляю", ", ".join(days), len(ids))
+        return 0
+    with db:
+        for tbl, col in (("tasks", "id"), ("analysis", "task_id"), ("toponyms", "task_id")):
+            db.executemany(f"DELETE FROM {tbl} WHERE {col} = ?", [(i,) for i in gone])
+    return len(gone)
+
+
+def days_checked(db: sqlite3.Connection) -> list[tuple[str, str]]:
+    """[(день, когда задачи дня последний раз сверены с Bitrix)] по возрастанию дня."""
+    return db.execute("SELECT day, MAX(last_seen) FROM tasks WHERE day IS NOT NULL GROUP BY day ORDER BY day").fetchall()
+
+
+def day_rows(db: sqlite3.Connection, day: str) -> list[list[str]]:
+    """Строки дня в порядке полей ленты (как rows в live.json)."""
+    rows = db.execute(f"SELECT {', '.join(TASK_COLS)} FROM tasks WHERE day = ?", (day,)).fetchall()
+    rows.sort(key=lambda r: (parse_dt(r[2]) or datetime.min, r[0] or ""))
+    return [[v if v is not None else "" for v in r] for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # Выгрузка дня в Excel
 # ---------------------------------------------------------------------------
@@ -184,6 +215,12 @@ def export_closed(db: sqlite3.Connection, cfg: dict, window_from: datetime, out_
         "SELECT DISTINCT day FROM tasks WHERE day < ? AND day NOT IN (SELECT day FROM exports) ORDER BY day",
         (first_open,))]
     return [p for p in (export_day(db, cfg, d, out_dir) for d in days) if p]
+
+
+def reexport(db: sqlite3.Connection, cfg: dict, days: list[str], window_from: datetime, out_dir: Path) -> list[Path]:
+    """Перечитанные из Bitrix закрытые дни — выгрузить заново (в Excel — текущие статусы)."""
+    first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
+    return [p for p in (export_day(db, cfg, d, out_dir) for d in sorted(set(days)) if d < first_open) if p]
 
 
 def archive_dir(cfg: dict) -> Path:
