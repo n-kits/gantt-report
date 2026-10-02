@@ -192,6 +192,12 @@ table.tl {
 
 .tl tbody td.fz { background: var(--light); }
 .tl td.id { font-weight: 700; color: var(--navy); }
+/* ID — ссылка на задачу в Bitrix: выглядит как обычный текст, подсвечивается при наведении */
+a.task-link { color: inherit; text-decoration: none; border-radius: 2px; }
+a.task-link:hover, a.task-link:focus-visible {
+  color: var(--accent); text-decoration: underline; text-underline-offset: 2px; outline: none;
+}
+a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .tl td.name { text-align: left; color: var(--text-sm); padding-left: 5px; }
 .tl td.exec { font-weight: 700; }
 .tl td.status { font-size: 10px; font-weight: 700; }
@@ -269,14 +275,14 @@ table.tl {
   --map-sea: #E6EDF1;                          /* море и фон за картой */
   --map-land: #FAF8F3;                         /* суша */
   --map-border: #C9C3B6;                       /* границы стран и береговая линия */
-  --map-today: #C45C26;                        /* оранжевое ядро точки (задачи сегодня) и его пульс */
+  --map-today: #16A34A;                        /* зелёное ядро точки (задачи сегодня) и его пульс */
   --map-old: #8A919C;                          /* серый круг точки (все задачи за три дня) */
   --map-old-opacity: .75;                      /* его непрозрачность (0…1) */
   --map-old2: #C3C8CF;                         /* «позавчера» — в вариантах точек «сектора» и «кольцо» */
   --map-halo: #FFFFFF;                         /* белый ободок вокруг точек */
   --map-hover: #1F2937;                        /* кольцо вокруг точки под курсором */
-  --map-country-today: rgba(196, 92, 38, .30); /* заливка страны «сегодня» */
-  --map-country-today-line: rgba(196, 92, 38, .75); /* её контур (при наведении — толще) */
+  --map-country-today: rgba(22, 163, 74, .26); /* заливка страны «сегодня» */
+  --map-country-today-line: rgba(22, 163, 74, .75); /* её контур (при наведении — толще) */
   --map-country-old: rgba(107, 114, 128, .12); /* заливка страны «вчера–позавчера» */
   --map-country-old-line: rgba(107, 114, 128, .55); /* её контур при наведении */
 }
@@ -306,7 +312,7 @@ table.tl {
 .geo-legend .gdot.today { background: var(--map-today); }
 .geo-legend .gdot.old { background: var(--map-old); opacity: var(--map-old-opacity); }
 .geo-legend .gdot.old2 { background: var(--map-old2); }
-/* «две точки в одной»: серый круг и оранжевое ядро */
+/* «две точки в одной»: серый круг и зелёное ядро */
 .geo-legend .gdot.core { width: 13px; height: 13px; vertical-align: -3px;
   background: radial-gradient(circle, var(--map-today) 0 3.5px, #fff 3.5px 4.5px, var(--map-old) 4.5px); }
 /* в легенде — только пояснение к текущему виду точек (data-points ставит js/map/geo-map.js) */

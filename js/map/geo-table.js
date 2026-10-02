@@ -55,7 +55,9 @@
     const body = sorted.map(it => {
       const meta = (it.themes || []).join(' / ') + (it.conflict ? ` · ${it.conflict}` : '');
       const tops = (it.toponyms || []).map(toponymHtml).join('');
-      return `<tr><td class="id">${esc(it.id)}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
+      const url = root.GanttModel && root.GanttModel.taskUrl(it.id);
+      const id = url ? `<a class="task-link" href="${esc(url)}" target="_blank" rel="noopener" title="Открыть в Bitrix">${esc(it.id)}</a>` : esc(it.id);
+      return `<tr><td class="id">${id}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
         `<td><div class="nm">${esc(it.name)}</div><div class="meta">${esc(it.project)} · ${esc(it.product)}</div></td>` +
         `<td><div>${esc(meta)}</div><div class="meta">${esc(it.sentiment)}</div></td>` +
         `<td><ul>${tops || '<li class="miss">—</li>'}</ul></td></tr>`;

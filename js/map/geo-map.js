@@ -17,25 +17,25 @@
     sea: '#E6EDF1',
     land: '#FAF8F3',
     border: '#C9C3B6',
-    today: '#C45C26',
+    today: '#16A34A',
     old: '#8A919C',
     old2: '#C3C8CF',
     oldOpacity: 0.75,
     halo: '#FFFFFF',
     hover: '#1F2937',
-    countryToday: 'rgba(196, 92, 38, .30)',
-    countryTodayLine: 'rgba(196, 92, 38, .75)',
+    countryToday: 'rgba(22, 163, 74, .26)',
+    countryTodayLine: 'rgba(22, 163, 74, .75)',
     countryOld: 'rgba(107, 114, 128, .12)',
     countryOldLine: 'rgba(107, 114, 128, .55)',
   };
   const PULSE_MS = 2400;
 
   /*
-   * Вид точки. Основной — core: серый круг по всем задачам за три дня и оранжевое ядро
+   * Вид точки. Основной — core: серый круг по всем задачам за три дня и зелёное ядро
    * по сегодняшним. В архиве (включаются параметром ?points=… в адресе):
    *   dot  — круг: размер по всем задачам, цвет «сегодня» / «раньше»;
    *   pie  — сектора: доля задач сегодня / вчера / позавчера;
-   *   ring — кольцо из дуг по дням, центр оранжевый, если место есть сегодня.
+   *   ring — кольцо из дуг по дням, центр зелёный, если место есть сегодня.
    */
   const POINT_STYLES = ['core', 'dot', 'pie', 'ring'];
   const DEFAULT_POINT_STYLE = 'core';
@@ -290,7 +290,7 @@
   function drawPoint(p, sx, sy, r, phase) {
     const d = p.byDay || [p.today ? p.count : 0, p.today ? 0 : p.count, 0];
     if (pointStyle === 'core') {
-      // серый круг — все задачи за три дня, оранжевое ядро — сегодняшние
+      // серый круг — все задачи за три дня, зелёное ядро — сегодняшние
       disc(sx, sy, r, COLORS.old, COLORS.oldOpacity);
       halo(sx, sy, r);
       if (d[0]) {
@@ -313,7 +313,7 @@
       }
       halo(sx, sy, r);
     } else if (pointStyle === 'ring') {
-      // дуги по дням по краю, центр — оранжевый, если место есть сегодня
+      // дуги по дням по краю, центр — зелёный, если место есть сегодня
       if (p.today) pulse(sx, sy, r, phase);
       const w = Math.max(2.5, r * 0.42);
       const colors = DAY_COLORS();

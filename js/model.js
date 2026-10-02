@@ -17,6 +17,9 @@
 
   const DAY_START_HOUR = 4; // ось всегда начинается с 04:00
   const MAX_TIMELINE_COLS = 72;
+  // карточка задачи в Bitrix; ID — только цифры
+  const TASK_URL = 'https://crm.emg24.ru/company/personal/user/609/tasks/task/view/{id}/';
+  const taskUrl = id => (/^\d+$/.test(String(id || '')) ? TASK_URL.replace('{id}', id) : null);
   const TAIL_SLOTS = 6; // пустые колонки справа — запас под свежие задачи
   const HOUR = 3600 * 1000;
 
@@ -378,7 +381,7 @@
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, shortName, guessNowFromFilename,
     loadTasks, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
-    fmtFull, fmtDMHM,
+    fmtFull, fmtDMHM, taskUrl,
   };
   root.GanttModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

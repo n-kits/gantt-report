@@ -39,7 +39,8 @@
     tl.rows.forEach((r, ri) => {
       const t = r.task;
       out.push(`<tr class="task" data-i="${ri}">`);
-      out.push(`<td class="fz fz1 id">${esc(t.id)}</td>`);
+      const url = M.taskUrl(t.id);
+      out.push(`<td class="fz fz1 id">${url ? `<a class="task-link" href="${esc(url)}" target="_blank" rel="noopener" title="Открыть в Bitrix">${esc(t.id)}</a>` : esc(t.id)}</td>`);
       out.push(`<td class="fz fz2 name">${esc(t.short)}</td>`);
       out.push(`<td class="fz fz3 exec" style="color:${r.execColor}">${esc(r.execShort)}</td>`);
       out.push(`<td class="fz fz4 status" style="color:${r.statusColor};background:${r.statusBg}">${esc(t.status)}</td>`);
