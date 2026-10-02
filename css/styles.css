@@ -319,7 +319,12 @@ html[data-points="ring"] .geo-legend [data-for~="ring"] { display: inline; }
 /* Сводная таблица «Задачи и топонимы» */
 .geo-h2 { margin: 20px 0 4px; font-size: 16px; color: var(--header); }
 .geo-src-legend { margin: 0 0 6px; }
-.geo-table { overflow-x: auto; }
+/* своя прокрутка: таблица не длиннее ~70% экрана, шапка прилипает, колесо не уводит страницу */
+.geo-table {
+  overflow: auto; max-height: max(320px, 70vh); overscroll-behavior: contain;
+  border: 1px solid var(--line); border-radius: 3px;
+}
+.geo-table table.geo-tbl { border-style: hidden; }
 table.geo-tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; background: #fff; }
 .geo-tbl th, .geo-tbl td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; text-align: left; }
 .geo-tbl th { background: var(--header); color: #fff; position: sticky; top: 0; z-index: 1; font-weight: 700; }
