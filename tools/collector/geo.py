@@ -22,6 +22,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
 
+from scrub import clean
+
 log = logging.getLogger("collector")
 
 HERE = Path(__file__).resolve().parent
@@ -434,10 +436,11 @@ def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
     Полный текст со страницы задачи (запрос с куками профиля, без отрисовки) —
     если превью нет (колонка «Описание» не включена) или оно обрезано.
     Без поля text задача не анализируется и будет повторена в следующий запуск.
+    Текст сразу очищается от личных данных (scrub.py): дальше — в очередь, архив и LLM — идёт только очищенный.
     """
     for t in [x for x in todo if "text" not in x][:limit]:
         if not t["url"] or (t["preview"] and not is_truncated(t["preview"])):
-            t["text"] = t["preview"]
+            t["text"] = clean(t["preview"])
             continue
         try:
             r = ctx.request.get(urljoin(base_url, t["url"]), timeout=60_000)
@@ -451,7 +454,7 @@ def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
         full = extract_description(r.body().decode("utf-8", "replace"))
         if not full:
             log.info("Задача %s: описания на странице нет — анализ по названию", t["id"])
-        t["text"] = full or t["preview"]
+        t["text"] = clean(full or t["preview"])
 
 
 def published(llm: dict, got: dict | None) -> dict | None:

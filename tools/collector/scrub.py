@@ -1,18 +1,29 @@
 """
-ЧЕРНОВИК, ЗАМОРОЖЕНО (issue #3): очистка текста перед отправкой в LLM — телефоны, e-mail,
-подписи писем, заголовки ответов и пересылок. В сборщик НЕ подключено.
+Очистка описаний задач от личных данных — перед отправкой в LLM и перед сохранением
+(очередь geo-state.json, архив archive.sqlite и его Excel-выгрузки). Issue #3.
+
+Вместо вырезанного — метки: [телефон], [email], [подпись], [цитата], [ссылка], [доб.], [контакт].
+Блоки, а не «хвост»: заказ часто лежит в цитате ниже подписи («ответ поверх цитаты»), поэтому
+цитаты сохраняются, вырезаются только их заголовки. Имена убираются только в подписи —
+в пределах лимита (до 6 коротких строк после «С уважением» / 200 символов, если подпись склеена
+с текстом в одну строку) и перед телефоном; имена в тексте заказа не трогаются.
 
 Замер на архиве заявок (in/tasks_enriched_batch_size10.csv, колонки «Текст» и «Топонимы»):
-    python tools/collector/scrub_draft.py in/tasks_enriched_batch_size10.csv
+    python tools/collector/scrub.py in/tasks_enriched_batch_size10.csv
 печатает число замен, долю потерянных топонимов и остатки телефонов / e-mail.
 Результат на 38 634 текстах (30.09.2026): потеряно 0,03% топонимов, телефонов осталось 1, e-mail 0.
 """
+from __future__ import annotations
+
 import csv
 import re
 import sys
 from collections import Counter
 
 csv.field_size_limit(10**9)
+
+# версия правил: сменилась — сборщик один раз перечищает уже сохранённые тексты (collect.migrate_scrub)
+VERSION = 1
 
 # ссылки и сетевые пути — до поиска телефонов (в них много «телефоноподобных» чисел);
 # ссылка обрывается на кириллице: названия бывают приклеены к ссылке без пробела
@@ -21,6 +32,8 @@ EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # телефон: +7/7/8, затем 10 цифр с разделителями пробел, дефис, скобки; или +код страны 10–13 цифр
 PHONE = re.compile(r"(?<![\w\d])(?:\+?[78][\s\-]*\(?\d{3}\)?[\s\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}"
                    r"|\+\d[\d\s\-\(\)]{9,17}\d)(?![\d])")
+# телефон, приклеенный к слову без пробела («Аня8916…»): только сплошные 11 цифр с 7/8
+PHONE_GLUED = re.compile(r"(?<=[А-Яа-яЁёA-Za-z])\+?[78]\d{10}(?!\d)")
 EXT = re.compile(r"(?i)\b(?:доб\.?|ext\.?|местный номер|внутр\.?|вн\.)\s*\(?[\d\-]{2,6}\)?")
 SHORT = re.compile(r"(?i)\b(тел\.?|т\.|моб\.?|cell\.?|office:?|телефон:?)\s*:?\s*\d{2,3}[\-\s]\d{2}(?:[\-\s]\d{2})?\b")
 
@@ -35,6 +48,9 @@ REPLY_HDR = re.compile(r"(?i)^\s*(?:(?:пн|вт|ср|чт|пт|сб|вс|mon|tu
 HDR_FIELD = re.compile(r"(?i)^\s*(отправлено|sent|дата|date|кому|to|копия|cc|тема|subject)\s*:")
 NAME_BEFORE_PHONE = re.compile(r"(?:[А-ЯЁ][а-яё]+\.?\s+){1,2}[А-ЯЁ][а-яё]+\.?[\s,:–-]*\[телефон\]")
 CORP = re.compile(r"(?i)all-russia state television and radio broadcasting company")
+# «Отправлено с iPhone» и т.п. внутри строки (у писем без переносов)
+SENT_FROM = re.compile(r"(?i)(?:отправлено (?:с|из)|sent from)(?: моего| my)?\s+"
+                       r"(?:iphone|ipad|android|samsung|galaxy|huawei|xiaomi|mail\.ru|яндекс\S*|yandex\S*|outlook)\S*")
 
 INLINE_SIG = re.compile(r"(?i)(?:--\s*)?(?:с\s+уважением|best regards|kind regards)[,!.]?")
 BOUNDARY = re.compile(r"(?i)-{4,}|\s--\s|(?:от|from)\s*:|\d{1,2}\.\d{1,2}\.\d{2,4},?\s+\d{1,2}:\d{2}")
@@ -103,8 +119,17 @@ def scrub(text: str) -> tuple[str, Counter]:
     t, n = EXT.subn("[доб.]", t); c["ext"] += n
     t, n = SHORT.subn(r"\1 [телефон]", t); c["short"] += n
     t, n = PHONE.subn("[телефон]", t); c["phone"] += n
+    t, n = PHONE_GLUED.subn(" [телефон]", t); c["phone"] += n
     t, n = NAME_BEFORE_PHONE.subn("[контакт] [телефон]", t); c["name_phone"] += n
+    t, n = SENT_FROM.subn("", t); c["drop"] += n
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = "\n".join(ln.strip() for ln in t.split("\n"))
     return re.sub(r"(\[цитата\]\n?){2,}", "[цитата]\n", t), c
+
+
+def clean(text: str | None) -> str:
+    """Очищенный текст (пустой — как есть)."""
+    return scrub(text)[0] if text else (text or "")
 
 
 if __name__ == "__main__":

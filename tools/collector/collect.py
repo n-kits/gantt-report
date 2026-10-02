@@ -433,6 +433,10 @@ def run(cfg: dict, dry_run: bool) -> int:
     code = 0
     try:
         with Lock() as lock:
+            try:
+                migrate_scrub(cfg)
+            except Exception:  # noqa: BLE001 — повторится в следующий запуск
+                log.exception("Перечистка сохранённых текстов не удалась")
             geo_state = load_geo_state() if cfg.get("geo") else None
             res = fetch_tasks(cfg, geo_state)
             geo_part = None
@@ -524,6 +528,50 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
         log.info("Архив: обновлено задач %s%s", n, f", удалено (нет в Bitrix) {gone}" if gone else "")
     finally:
         db.close()
+
+
+def migrate_scrub(cfg: dict) -> None:
+    """Правила очистки (scrub.VERSION) сменились или ещё не применялись — перечистить уже сохранённое:
+    тексты в очереди geo-state.json, описания в archive.sqlite и Excel-выгрузки затронутых дней."""
+    import archive
+    import scrub
+    mark = APP_DIR / "scrub.json"
+    try:
+        if json.loads(mark.read_text(encoding="utf-8")).get("version") == scrub.VERSION:
+            return
+    except (OSError, ValueError):
+        pass
+    state_path = APP_DIR / "geo-state.json"
+    n_state = 0
+    if state_path.exists():
+        state = load_geo_state()
+        for st in state.get("tasks", {}).values():
+            if st.get("text"):
+                new = scrub.clean(st["text"])
+                n_state += new != st["text"]
+                st["text"] = new
+        tmp = state_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(state_path)
+    n_arch, n_xlsx, days = 0, 0, set()
+    if (APP_DIR / "archive.sqlite").exists():
+        db = archive.connect(APP_DIR / "archive.sqlite")
+        try:
+            with db:
+                for tid, day, text in db.execute("SELECT id, day, description FROM tasks WHERE description <> ''").fetchall():
+                    new = scrub.clean(text)
+                    if new != text:
+                        db.execute("UPDATE tasks SET description = ? WHERE id = ?", (new, tid))
+                        n_arch += 1
+                        days.add(day)
+            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
+            for d in sorted(days & exported):          # в Excel тоже не должно остаться исходного текста
+                n_xlsx += bool(archive.export_day(db, cfg, d, archive.archive_dir(cfg)))
+        finally:
+            db.close()
+    mark.write_text(json.dumps({"version": scrub.VERSION, "at": utc_now_iso()}), encoding="utf-8")
+    log.info("Очистка текстов (правила v%s): очередь %s, архив %s, Excel перевыгружено %s",
+             scrub.VERSION, n_state, n_arch, n_xlsx)
 
 
 def refresh_closed(cfg: dict, res: dict, lock: Lock) -> None:
