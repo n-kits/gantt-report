@@ -73,8 +73,12 @@
     };
   }
 
-  // Радиус точки в px: 1 задача — 4, дальше растёт как корень из числа задач.
-  const radius = count => Math.min(16, 4 + 3 * Math.sqrt(Math.max(0, count - 1)));
+  // Радиус точки в px: 1 задача — 4, каждая следующая +1, не больше 40 (подобрано на стенде
+  // tools/collector/geo_review.py --sizes). n — число задач с этим местом (в «половинках» — за свой день).
+  const radius = count => {
+    const n = Math.max(1, count), min = 4, k = 1, max = 40;
+    return Math.max(0.5, Math.min(max, min + k * (n - 1)));
+  };
 
   root.GanttGeo = { aggregate, dayStart, parseStart, radius, DAY_START_HOUR };
 })(typeof window !== 'undefined' ? window : globalThis);

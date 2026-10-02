@@ -1,0 +1,229 @@
+<!doctype html>
+<!--
+  Шаблон стенда размеров точек. Данные подставляет tools/collector/geo_review.py --sizes
+  → in/geo-sizes.html (локально, в .gitignore: там реальные топонимы).
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="../">
+<title>Стенд размеров точек</title>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  body { display: block; }
+  .lab { display: grid; grid-template-columns: 340px 1fr; height: 100vh; }
+  @media (max-width: 900px) { .lab { grid-template-columns: 1fr; height: auto; } .lab .geo-stage { height: 70vh; } }
+  .side { overflow: auto; padding: 12px 16px 24px; border-right: 1px solid var(--line); background: var(--light); }
+  .side h1 { margin: 0 0 2px; font-size: 20px; color: var(--header); }
+  .side .sub { margin: 0 0 12px; font-size: 12px; color: var(--gray); }
+  .side h2 { margin: 16px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--navy); }
+  .row { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+  .row output { font-variant-numeric: tabular-nums; text-align: right; font-weight: 700; }
+  .row.off { opacity: .4; }
+  select, textarea, button { font: inherit; font-size: 13px; }
+  select { width: 100%; height: 28px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+  textarea { width: 100%; min-height: 54px; font-family: Consolas, monospace; font-size: 12px; padding: 6px;
+             border: 1px solid var(--line); border-radius: 3px; resize: vertical; }
+  .err { color: #B42318; font-size: 12px; min-height: 16px; }
+  .hint { font-size: 12px; color: var(--gray); margin: 4px 0; }
+  .radios label { display: block; font-size: 13px; margin: 3px 0; }
+  table.scale { border-collapse: collapse; width: 100%; font-size: 12px; background: #fff; }
+  table.scale th, table.scale td { border: 1px solid var(--line); padding: 2px 6px; text-align: right; }
+  table.scale th { background: var(--header); color: #fff; font-weight: 700; }
+  table.scale td.c { text-align: center; height: 26px; }
+  table.scale td.c svg { display: block; margin: auto; overflow: visible; }
+  pre { margin: 0; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: 3px;
+        font-size: 11.5px; white-space: pre-wrap; word-break: break-all; }
+  .btns { display: flex; gap: 8px; margin-top: 6px; }
+  .btns button { cursor: pointer; padding: 4px 10px; border: 1px solid var(--line); border-radius: 3px; background: #fff; color: var(--navy); font-weight: 700; }
+  .btns button:hover { border-color: var(--navy); }
+  .mapcol { position: relative; min-height: 0; }
+  .mapcol .geo { margin: 0; height: 100%; }
+  .mapcol .geo-stage { height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<div class="lab">
+  <aside class="side">
+    <h1>Стенд размеров точек</h1>
+    <p class="sub">Формула применяется к карте сразу. Сайт не меняется — когда понравится, перенесите строку
+      из блока «Для geo-model.js» в <code>js/map/geo-model.js</code>.</p>
+
+    <h2>Формула</h2>
+    <select id="preset">
+      <option value="sqrt">Корень: мин + k·√(n−1)</option>
+      <option value="linear">Линейно (как на сайте): мин + k·(n−1)</option>
+      <option value="log">Логарифм: мин + k·ln n</option>
+      <option value="area">Площадь ∝ числу задач: мин·√n</option>
+      <option value="custom">Своя формула</option>
+    </select>
+    <div class="row"><span>Минимум, px</span><input id="min" type="range" min="1" max="14" step="0.5"><output id="min-v"></output></div>
+    <div class="row" id="k-row"><span>Коэфф. k</span><input id="k" type="range" min="0" max="10" step="0.1"><output id="k-v"></output></div>
+    <div class="row"><span>Максимум, px</span><input id="max" type="range" min="4" max="40" step="1"><output id="max-v"></output></div>
+    <p class="hint">n — число задач с этим местом (в раздельных видах — отдельно за сегодня и за вчера–позавчера).
+      Переменные в формуле: <code>n</code>, <code>min</code>, <code>k</code>, <code>max</code>, <code>Math</code>.</p>
+    <textarea id="expr" spellcheck="false"></textarea>
+    <div class="err" id="err"></div>
+
+    <h2>Вид точки</h2>
+    <select id="style">
+      <option value="core">Две точки в одной</option>
+      <option value="pair">Раздельно: пара рядом</option>
+      <option value="split">Раздельно: два круга в одном месте</option>
+      <option value="halves">Раздельно: половинки (на сайте)</option>
+      <option value="dot">Круг (архив)</option>
+      <option value="pie">Сектора (архив)</option>
+      <option value="ring">Кольцо (архив)</option>
+    </select>
+
+    <h2>Данные</h2>
+    <div class="radios">
+      <label><input type="radio" name="data" value="real" checked> реальные (Bitrix на <span id="real-now"></span>)</label>
+      <label><input type="radio" name="data" value="cases"> тестовые случаи «сегодня / вчера»</label>
+    </div>
+    <p class="hint" id="cases-hint"></p>
+
+    <h2>Шкала</h2>
+    <table class="scale"><thead><tr><th>задач</th><th>радиус, px</th><th>диаметр</th><th>как выглядит</th></tr></thead>
+      <tbody id="scale"></tbody></table>
+
+    <h2>Для geo-model.js</h2>
+    <pre id="code"></pre>
+    <div class="btns">
+      <button id="copy" type="button">Скопировать</button>
+      <button id="reset" type="button">Как на сайте</button>
+    </div>
+  </aside>
+
+  <div class="mapcol">
+    <section id="geo" class="geo" hidden>
+      <div hidden><span id="geo-info"></span></div>
+      <div id="geo-stage" class="geo-stage">
+        <canvas id="geo-canvas"></canvas>
+        <div class="geo-zoom">
+          <button id="geo-zin" type="button" title="Приблизить">+</button>
+          <button id="geo-zout" type="button" title="Отдалить">−</button>
+          <button id="geo-fit" type="button" title="Показать все топонимы">⤢</button>
+        </div>
+        <div id="geo-tip" class="geo-tip" hidden></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="js/model.js"></script>
+<script src="js/map/geo-model.js"></script>
+<script src="js/map/geo-map.js"></script>
+<script>
+(function () {
+  'use strict';
+  const REAL = __REAL__;
+  const CASES = __CASES__;
+  const NOW = __NOW__;
+  const CASES_LABEL = __CASES_LABEL__;
+  const KEY = 'gantt-size-lab.v1';
+
+  const PRESETS = {
+    sqrt: 'Math.min(max, min + k * Math.sqrt(n - 1))',
+    linear: 'Math.min(max, min + k * (n - 1))',
+    log: 'Math.min(max, min + k * Math.log(n))',
+    area: 'Math.min(max, min * Math.sqrt(n))',
+  };
+  const SITE = { preset: 'linear', min: 4, k: 1, max: 40, expr: PRESETS.linear, style: 'halves', data: 'real' };
+  const SAMPLE = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30];
+
+  const $ = id => document.getElementById(id);
+  const el = { preset: $('preset'), min: $('min'), k: $('k'), max: $('max'), expr: $('expr'), err: $('err'),
+               style: $('style'), scale: $('scale'), code: $('code') };
+  let st;
+  try { st = Object.assign({}, SITE, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { st = Object.assign({}, SITE); }
+  if (!REAL) st.data = 'cases';
+
+  let f = null;   // n → радиус
+  const fmt = v => (Math.round(v * 10) / 10).toString().replace('.', ',');
+
+  function compile() {
+    try {
+      const fn = new Function('n', 'min', 'k', 'max', 'return (' + st.expr + ');');
+      const test = fn(1, st.min, st.k, st.max);
+      if (!Number.isFinite(test)) throw new Error('при n = 1 получается не число');
+      f = n => { const r = fn(n, st.min, st.k, st.max); return Number.isFinite(r) ? Math.max(0.5, r) : 0.5; };
+      el.err.textContent = '';
+      return true;
+    } catch (e) {
+      el.err.textContent = 'Ошибка в формуле: ' + e.message;
+      return false;
+    }
+  }
+
+  function apply() {
+    if (!compile()) return;
+    GanttGeo.radius = count => f(Math.max(1, count));
+    GanttMap.setPointStyle(st.style);           // заодно помечает карту к перерисовке
+    renderScale();
+    renderCode();
+    try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* не критично */ }
+  }
+
+  function renderScale() {
+    const today = getComputedStyle(document.documentElement).getPropertyValue('--map-today').trim() || '#16A34A';
+    el.scale.innerHTML = SAMPLE.map(n => {
+      const r = f(n), s = Math.ceil(r * 2 + 4);
+      return `<tr><td>${n}</td><td>${fmt(r)}</td><td>${fmt(r * 2)}</td><td class="c" style="height:${Math.max(26, s + 4)}px">` +
+        `<svg width="${s}" height="${s}"><circle cx="${s / 2}" cy="${s / 2}" r="${r}" fill="${today}" stroke="#fff" stroke-width="1.5"/></svg></td></tr>`;
+    }).join('');
+  }
+
+  function renderCode() {
+    el.code.textContent =
+      `// Радиус точки в px: n — число задач с этим местом.\n` +
+      `const radius = count => {\n` +
+      `  const n = Math.max(1, count), min = ${st.min}, k = ${st.k}, max = ${st.max};\n` +
+      `  return Math.max(0.5, ${st.expr});\n` +
+      `};`;
+  }
+
+  function syncUi() {
+    el.preset.value = st.preset;
+    for (const p of ['min', 'k', 'max']) { el[p].value = st[p]; $(p + '-v').textContent = fmt(st[p]); }
+    el.expr.value = st.expr;
+    el.expr.readOnly = st.preset !== 'custom';
+    $('k-row').classList.toggle('off', st.preset === 'area');
+    el.style.value = st.style;
+    document.querySelectorAll('input[name=data]').forEach(r => { r.checked = r.value === st.data; r.disabled = r.value === 'real' && !REAL; });
+  }
+
+  function showData() {
+    GanttMap.show(st.data === 'real' && REAL ? REAL : CASES, GanttModel.parseDt(NOW) || new Date());
+  }
+
+  el.preset.addEventListener('change', () => {
+    st.preset = el.preset.value;
+    if (st.preset !== 'custom') st.expr = PRESETS[st.preset];
+    syncUi(); apply();
+  });
+  for (const p of ['min', 'k', 'max']) {
+    el[p].addEventListener('input', () => { st[p] = +el[p].value; $(p + '-v').textContent = fmt(st[p]); apply(); });
+  }
+  el.expr.addEventListener('input', () => { st.expr = el.expr.value; apply(); });
+  el.style.addEventListener('change', () => { st.style = el.style.value; apply(); });
+  document.querySelectorAll('input[name=data]').forEach(r => r.addEventListener('change', () => {
+    st.data = r.value; apply(); showData();
+  }));
+  $('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(el.code.textContent); $('copy').textContent = 'Скопировано'; }
+    catch (e) { $('copy').textContent = 'Не вышло — выделите вручную'; }
+    setTimeout(() => { $('copy').textContent = 'Скопировать'; }, 1500);
+  });
+  $('reset').addEventListener('click', () => { st = Object.assign({}, SITE, { data: st.data }); syncUi(); apply(); });
+
+  $('real-now').textContent = NOW || '—';
+  $('cases-hint').textContent = 'Тестовые случаи слева направо: ' + CASES_LABEL + '.';
+  syncUi();
+  apply();
+  showData();
+})();
+</script>
+</body>
+</html>

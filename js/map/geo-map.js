@@ -31,14 +31,19 @@
   const PULSE_MS = 2400;
 
   /*
-   * Вид точки. Основной — core: серый круг по всем задачам за три дня и зелёное ядро
-   * по сегодняшним. В архиве (включаются параметром ?points=… в адресе):
+   * Вид точки. Основной — halves (половинки, см. ниже). В архиве (параметр ?points=… в адресе):
+   *   core — серый круг по всем задачам за три дня и зелёное ядро по сегодняшним;
    *   dot  — круг: размер по всем задачам, цвет «сегодня» / «раньше»;
    *   pie  — сектора: доля задач сегодня / вчера / позавчера;
    *   ring — кольцо из дуг по дням, центр зелёный, если место есть сегодня.
+   * Раздельные (без общей суммы за три дня: «сегодня» и «вчера–позавчера» — каждый своим размером):
+   *   split  — два круга в одном месте, больший снизу;
+   *   pair   — два круга рядом: зелёный слева, серый справа;
+   *   halves — половинки: левая зелёная, правая серая, у каждой свой радиус.
    */
-  const POINT_STYLES = ['core', 'dot', 'pie', 'ring'];
-  const DEFAULT_POINT_STYLE = 'core';
+  const POINT_STYLES = ['core', 'dot', 'pie', 'ring', 'split', 'pair', 'halves'];
+  const SEPARATE = ['split', 'pair', 'halves'];
+  const DEFAULT_POINT_STYLE = 'halves';
   let pointStyle = (() => {
     const v = new URLSearchParams(location.search).get('points');
     return POINT_STYLES.includes(v) ? v : DEFAULT_POINT_STYLE;
@@ -248,7 +253,7 @@
     const phase = animating() ? (t % PULSE_MS) / PULSE_MS : null;
     for (const p of proj) {
       const sx = p.x * k + tx, sy = p.y * k + ty;
-      const r = G.radius(p.count);
+      const r = extent(p);
       if (sx < -r * 4 || sy < -r * 4 || sx > W + r * 4 || sy > H + r * 4) continue;
       drawPoint(p, sx, sy, r, phase);
       if (p.approx) {            // приблизительные координаты — пунктирный ободок
@@ -287,9 +292,66 @@
 
   const DAY_COLORS = () => [COLORS.today, COLORS.old, COLORS.old2];
 
+  const days = p => p.byDay || [p.today ? p.count : 0, p.today ? 0 : p.count, 0];
+
+  // радиусы «сегодня» и «вчера–позавчера» для раздельных видов (0 — части нет)
+  function sepRadii(p) {
+    const d = days(p);
+    return [d[0] ? G.radius(d[0]) : 0, d[1] + d[2] ? G.radius(d[1] + d[2]) : 0];
+  }
+
+  // радиус, в который вписан значок точки: для наведения, ободков и отсечения
+  function extent(p) {
+    if (!SEPARATE.includes(pointStyle)) return G.radius(p.count);
+    const [rt, ro] = sepRadii(p);
+    if (pointStyle === 'pair' && rt && ro) return rt + ro;
+    if (pointStyle === 'split' && rt && ro) return Math.max(rt, ro, Math.min(rt, ro) + 2);
+    return Math.max(rt, ro);
+  }
+
+  function halfDisc(sx, sy, r, left, color, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.arc(sx, sy, r, left ? Math.PI / 2 : -Math.PI / 2, left ? 3 * Math.PI / 2 : Math.PI / 2);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = COLORS.halo; ctx.lineWidth = 1.25; ctx.stroke();
+  }
+
   function drawPoint(p, sx, sy, r, phase) {
-    const d = p.byDay || [p.today ? p.count : 0, p.today ? 0 : p.count, 0];
-    if (pointStyle === 'core') {
+    const d = days(p);
+    if (SEPARATE.includes(pointStyle)) {
+      let [rt, ro] = sepRadii(p);
+      if (pointStyle === 'split' && rt && ro) {
+        // нижний (больший) круг — хотя бы на 2 px больше верхнего, иначе при равных числах он не виден
+        if (ro < rt) rt = Math.max(rt, ro + 2); else ro = Math.max(ro, rt + 2);
+      }
+      const green = (x, y) => { pulse(x, y, rt, phase); disc(x, y, rt, COLORS.today, 1); halo(x, y, rt); };
+      const grey = (x, y) => { disc(x, y, ro, COLORS.old, COLORS.oldOpacity); halo(x, y, ro); };
+      if (pointStyle === 'split') {
+        // оба круга в одной точке: больший снизу, меньший сверху — видно оба
+        if (rt && ro && ro < rt) { green(sx, sy); grey(sx, sy); }   // сегодня больше — серый сверху
+        else { if (ro) grey(sx, sy); if (rt) green(sx, sy); }
+      } else if (pointStyle === 'pair') {
+        // касаются друг друга в самой точке: зелёный слева, серый справа
+        if (rt && ro) { green(sx - rt, sy); grey(sx + ro, sy); }
+        else if (rt) green(sx, sy);
+        else grey(sx, sy);
+      } else {
+        // половинки с общим центром, у каждой свой радиус; место только в один из дней — целый круг
+        if (!(rt && ro)) {
+          if (rt) green(sx, sy); else grey(sx, sy);
+        } else {
+          pulse(sx, sy, rt, phase);
+          halfDisc(sx, sy, rt, true, COLORS.today, 1);
+          halfDisc(sx, sy, ro, false, COLORS.old, COLORS.oldOpacity);
+          ctx.strokeStyle = COLORS.halo; ctx.lineWidth = 1.25;   // разделитель
+          ctx.beginPath(); ctx.moveTo(sx, sy - Math.max(rt, ro)); ctx.lineTo(sx, sy + Math.max(rt, ro)); ctx.stroke();
+        }
+      }
+    } else if (pointStyle === 'core') {
       // серый круг — все задачи за три дня, зелёное ядро — сегодняшние
       disc(sx, sy, r, COLORS.old, COLORS.oldOpacity);
       halo(sx, sy, r);
@@ -348,7 +410,7 @@
   function pick(mx, my) {
     for (let i = proj.length - 1; i >= 0; i--) {       // сверху вниз
       const p = proj[i];
-      const dx = p.x * k + tx - mx, dy = p.y * k + ty - my, r = G.radius(p.count) + 3;
+      const dx = p.x * k + tx - mx, dy = p.y * k + ty - my, r = extent(p) + 3;
       if (dx * dx + dy * dy <= r * r) return p;
     }
     if (!basemap) return null;
@@ -364,7 +426,9 @@
   function showTip(x, mx, my) {
     if (!x) { el.tip.hidden = true; return; }
     const name = x.name || (basemap && basemap.paths.get(x.iso) || {}).name || x.iso;
-    el.tip.textContent = x.count > 1 ? `${name} · задач: ${x.count}` : name;
+    // «Москва 9 / 23»: задач с этим местом сегодня (с 04:00) / вчера–позавчера (расшифровка — в легенде)
+    const d = days(x);
+    el.tip.textContent = `${name} ${d[0]} / ${d[1] + d[2]}`;
     el.tip.hidden = false;
     const w = el.tip.offsetWidth, h = el.tip.offsetHeight;
     el.tip.style.left = Math.min(W - w - 4, mx + 12) + 'px';

@@ -5,6 +5,8 @@
     python collect.py --dry-run -v        # обновить %LOCALAPPDATA%\\gantt-collector\\geo-review.json
     python geo_review.py                  # → in/geo-review.html (в .gitignore: там реальные задачи)
     python geo_review.py --compare-from in/live-real.json   # только in/geo-compare.html — варианты точек
+    python geo_review.py --compare        # то же по свежим данным сборщика (geo-review.json)
+    python geo_review.py --sizes          # in/geo-sizes.html — стенд: подбор формулы размера точек
 Открыть через локальный сервер из корня репозитория: http://localhost:8765/in/geo-review.html
 """
 import html
@@ -18,15 +20,22 @@ REPO = Path(__file__).resolve().parent.parent.parent
 SRC = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector" / "geo-review.json"
 OUT = REPO / "in" / "geo-review.html"
 OUT_MAP = REPO / "in" / "geo-map.html"          # только карта; вид точек — ?points=dot|core|pie|ring
-OUT_COMPARE = REPO / "in" / "geo-compare.html"  # четыре варианта точек рядом
+OUT_COMPARE = REPO / "in" / "geo-compare.html"  # варианты точек рядом
+OUT_CASES = REPO / "in" / "geo-cases.html"      # тестовые случаи «сегодня / вчера» для сравнения
+OUT_SIZES = REPO / "in" / "geo-sizes.html"      # стенд: формула размера точек, интерактивно
 
+G = "<b style=color:#16A34A>сегодня</b>"
+O = "<b style=color:#8A919C>вчера–позавчера</b>"
 VARIANTS = [
-    ("core", "Две точки в одной (основной)", "Серый круг — все задачи за 3 дня; оранжевое ядро — задачи сегодня (его размер — по их числу)."),
-    ("dot", "Круг (архив)", "Размер — все задачи за 3 дня; оранжевый, если место есть сегодня, иначе серый."),
+    ("core", "Две точки в одной (прежний основной)", "Серый круг — все задачи за 3 дня; зелёное ядро — задачи сегодня (его размер — по их числу)."),
+    ("split", "Раздельно: два круга в одном месте",
+     f"{G} и {O} — каждый своим размером, без общей суммы; больший круг снизу, меньший сверху."),
+    ("pair", "Раздельно: пара рядом",
+     f"Слева {G}, справа {O}, касаются в самой точке; размер каждого — по своему числу задач."),
+    ("halves", "Раздельно: половинки (основной)",
+     f"Левая половина — {G}, правая — {O}, общий центр, у каждой свой радиус."),
     ("pie", "Сектора (архив)", "Размер — все задачи за 3 дня; сектора от 12 часов по часовой: "
-                       "<b style=color:#C45C26>сегодня</b>, <b style=color:#8A919C>вчера</b>, <b style=color:#A9B0B9>позавчера</b>."),
-    ("ring", "Кольцо (архив)", "Размер — все задачи за 3 дня; дуги по краю — доли дней (те же цвета, что у секторов); "
-                       "центр оранжевый, если место есть сегодня."),
+                       "<b style=color:#16A34A>сегодня</b>, <b style=color:#8A919C>вчера</b>, <b style=color:#A9B0B9>позавчера</b>."),
 ]
 
 SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны"}
@@ -74,6 +83,14 @@ def main():
     if not SRC.exists():
         sys.exit(f"Нет {SRC} — сначала python collect.py --dry-run -v")
     data = json.loads(SRC.read_text(encoding="utf-8"))
+    if "--sizes" in sys.argv:
+        write_sizes(data)
+        return
+    if "--compare" in sys.argv:
+        geo_json = json.dumps({"v": 1, "items": data["items"]}, ensure_ascii=False).replace("</", r"<\/")
+        write_compare(data, geo_json)
+        print(f"{OUT_COMPARE}  (данные сборщика на {data.get('now')}, задач с анализом {len(data['items'])})")
+        return
     items = data["items"]
     n = sum(len(it["toponyms"]) for it in items)
     by_src = {}
@@ -155,9 +172,40 @@ def main():
     print(f"{OUT_COMPARE}  (варианты точек)")
 
 
-def write_compare(data, geo_json):
-    now = json.dumps(data.get("now") or "")
-    OUT_MAP.write_text(f"""<!doctype html>
+# тестовые случаи «сегодня / вчера–позавчера» — в ряд с запада на восток (Сахара → Индия)
+CASES = [(1, 0), (0, 1), (1, 1), (3, 1), (1, 3), (5, 5), (10, 2), (2, 10), (15, 0), (0, 15)]
+
+
+def cases_geo(now_str):
+    """Синтетический раздел geo: в каждой точке ровно столько задач сегодня и вчера, сколько в CASES."""
+    from datetime import datetime, timedelta
+    now = datetime.strptime(now_str, "%d.%m.%Y %H:%M:%S") if now_str else datetime.now()
+    day = now.replace(hour=4, minute=0, second=0) - (timedelta(days=1) if now.hour < 4 else timedelta(0))
+    today, yesterday = day + timedelta(hours=1), day - timedelta(hours=10)
+    items, n = [], 0
+    for i, (t, o) in enumerate(CASES):
+        top = {"name": f"сегодня {t} / вчера–позавчера {o}", "kind": "settlement", "lat": 22.0, "lon": -5.0 + 9.5 * i}
+        for when, cnt in ((today, t), (yesterday, o)):
+            for _ in range(cnt):
+                n += 1
+                items.append({"id": str(n), "start": when.strftime("%d.%m.%Y %H:%M:%S"), "toponyms": [top]})
+    return json.dumps({"v": 1, "items": items}, ensure_ascii=False)
+
+
+def write_sizes(data):
+    """Стенд размеров точек: шаблон size_lab.html + реальные данные сборщика + тестовые случаи."""
+    safe = lambda s: s.replace("</", "<\\/")  # noqa: E731
+    page = (Path(__file__).with_name("size_lab.html").read_text(encoding="utf-8")
+            .replace("__REAL__", safe(json.dumps({"v": 1, "items": data["items"]}, ensure_ascii=False)))
+            .replace("__CASES__", safe(cases_geo(data.get("now"))))
+            .replace("__NOW__", json.dumps(data.get("now") or ""))
+            .replace("__CASES_LABEL__", json.dumps(", ".join(f"{t}/{o}" for t, o in CASES), ensure_ascii=False)))
+    OUT_SIZES.write_text(page, encoding="utf-8")
+    print(f"{OUT_SIZES}  (данные сборщика на {data.get('now')}, задач с анализом {len(data['items'])})")
+
+
+def map_page(path, geo_json, now):
+    path.write_text(f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><base href="../"><title>Карта</title>
 <link rel="stylesheet" href="css/styles.css">
 <style>body {{ display:block; background:#fff; }} .geo {{ margin:0; }} .geo-stage {{ height: 100vh; border: 0; }}</style></head>
@@ -179,10 +227,21 @@ def write_compare(data, geo_json):
 <script>GanttMap.show({geo_json}, GanttModel.parseDt({now}) || new Date());</script>
 </body></html>""", encoding="utf-8")
 
+
+def write_compare(data, geo_json):
+    now = json.dumps(data.get("now") or "")
+    map_page(OUT_MAP, geo_json, now)
+    map_page(OUT_CASES, cases_geo(data.get("now")), now)
+    cases = ", ".join(f"{t}/{o}" for t, o in CASES)
+
     blocks = chr(10).join(f"""<section class="var">
   <h2>{i}. {title} <code>?points={key}</code></h2>
   <p class="legend">{desc} Пунктирный ободок — координаты по оценке модели.</p>
-  <iframe src="in/geo-map.html?points={key}" loading="lazy"></iframe>
+  <div class="pair">
+    <iframe src="in/geo-map.html?points={key}" loading="lazy"></iframe>
+    <figure><iframe class="cases" src="in/geo-cases.html?points={key}" loading="lazy"></iframe>
+      <figcaption>Тестовые случаи слева направо, «сегодня / вчера–позавчера»: {cases}</figcaption></figure>
+  </div>
 </section>""" for i, (key, title, desc) in enumerate(VARIANTS, 1))
     OUT_COMPARE.write_text(f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -196,13 +255,19 @@ def write_compare(data, geo_json):
   .var h2 {{ margin: 22px 0 2px; font-size: 17px; color: var(--header); }}
   .var h2 code {{ font-size: 12px; color: var(--gray); font-weight: 400; }}
   .var .legend {{ margin: 0 0 6px; }}
-  iframe {{ width: 100%; height: 540px; border: 1px solid var(--line); background: #fff; display: block; }}
+  .pair {{ display: grid; grid-template-columns: 3fr 2fr; gap: 10px; }}
+  @media (max-width: 900px) {{ .pair {{ grid-template-columns: 1fr; }} }}
+  figure {{ margin: 0; }}
+  figcaption {{ font-size: 12px; color: var(--gray); margin-top: 4px; }}
+  iframe {{ width: 100%; height: 520px; border: 1px solid var(--line); background: #fff; display: block; }}
+  iframe.cases {{ height: 240px; }}
 </style></head>
 <body><div class="wrap">
 <h1>Варианты точек на карте</h1>
-<div class="sub">Одни и те же реальные данные (Bitrix на {e(data.get("now") or "")}), «сегодня» — с 04:00.
+<div class="sub">Слева — реальные данные (Bitrix на {e(data.get("now") or "")}), справа — тестовые случаи; «сегодня» — с 04:00.
 Каждая карта масштабируется независимо. Любой вариант можно посмотреть и на основной странице: добавить к адресу
-<code>?points=core</code>, <code>?points=pie</code> или <code>?points=ring</code>.</div>
+<code>?points=split</code>, <code>?points=pair</code>, <code>?points=halves</code> и т. д.
+Подсказка при наведении показывает отдельно «сегодня» и «вчера–позавчера».</div>
 {blocks}
 </div></body></html>""", encoding="utf-8")
 

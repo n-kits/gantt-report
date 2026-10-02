@@ -312,6 +312,8 @@ a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .geo-legend .gdot.today { background: var(--map-today); }
 .geo-legend .gdot.old { background: var(--map-old); opacity: var(--map-old-opacity); }
 .geo-legend .gdot.old2 { background: var(--map-old2); }
+.geo-legend .gdot.halves { width: 13px; height: 13px; vertical-align: -3px;
+  background: linear-gradient(90deg, var(--map-today) 50%, #fff 50% 56%, var(--map-old) 56%); }
 /* «две точки в одной»: серый круг и зелёное ядро */
 .geo-legend .gdot.core { width: 13px; height: 13px; vertical-align: -3px;
   background: radial-gradient(circle, var(--map-today) 0 3.5px, #fff 3.5px 4.5px, var(--map-old) 4.5px); }
@@ -320,7 +322,10 @@ a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 html[data-points="core"] .geo-legend [data-for~="core"],
 html[data-points="dot"] .geo-legend [data-for~="dot"],
 html[data-points="pie"] .geo-legend [data-for~="pie"],
-html[data-points="ring"] .geo-legend [data-for~="ring"] { display: inline; }
+html[data-points="ring"] .geo-legend [data-for~="ring"],
+html[data-points="split"] .geo-legend [data-for~="split"],
+html[data-points="pair"] .geo-legend [data-for~="pair"],
+html[data-points="halves"] .geo-legend [data-for~="halves"] { display: inline; }
 
 /* Сводная таблица «Задачи и топонимы» */
 .geo-h2 { margin: 20px 0 4px; font-size: 16px; color: var(--header); }

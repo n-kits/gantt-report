@@ -140,7 +140,7 @@
     eq(a.points.length, 3, 'без координат — пропуск');
     eq(a.countries.map(c => [c.iso, c.count, c.today]), [['UKR', 2, true]]);
     eq(a.points[a.points.length - 1].today, true, 'сегодняшние рисуются последними (сверху)');
-    eq([G.radius(1), G.radius(4) > G.radius(2), G.radius(1000)], [4, true, 16]);
+    eq([G.radius(1), G.radius(2), G.radius(10), G.radius(1000)], [4, 5, 13, 40]);
     eq([byName['Москва'].byDay, byName['Сочи'].byDay, byName['Чёрное море'].byDay], [[1, 1, 0], [0, 1, 0], [0, 1, 0]], 'задачи по дням');
     const far = G.aggregate({ items: [{ id: '9', start: '25.09.2026 10:00:00', toponyms: [msk] }] }, at(28, 22));
     eq(far.points[0].byDay, [0, 0, 1], 'позавчера и раньше — в третью долю');
