@@ -8,6 +8,7 @@
 
   const G = root.GanttGeo;
   const SORT_KEY = 'gantt-geo.sort';
+  const OPEN_KEY = 'gantt-geo.table-open';   // '1' — развёрнута; по умолчанию свёрнута
   const SRC_LABEL = { cache: 'кэш', nominatim: 'Nominatim', llm: 'оценка модели', basemap: 'полигон страны' };
   const FAR_KM = 50;
 
@@ -69,6 +70,8 @@
 
   // Смонтировать таблицу в контейнер; повторный вызов — перерисовка с новыми данными
   function mount(box, items) {
+    const count = document.getElementById('geo-table-count');
+    if (count) count.textContent = items.length;
     let dir = store.get(SORT_KEY) === 'desc' ? 'desc' : 'asc';
     box.innerHTML = render(items, dir);
     box.onclick = e => {
@@ -79,5 +82,23 @@
     };
   }
 
-  root.GanttGeoTable = { fromLive, render, mount, SRC_LABEL };
+  // свернуть / развернуть: в свёрнутом виде виден только заголовок с числом задач
+  const toggle = document.getElementById('geo-table-toggle');
+  const body = document.getElementById('geo-table-body');
+  function setOpen(open) {
+    if (!toggle || !body) return;
+    body.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.title = open ? 'Свернуть таблицу' : 'Развернуть таблицу';
+  }
+  if (toggle) {
+    setOpen(store.get(OPEN_KEY) === '1');
+    toggle.addEventListener('click', () => {
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      store.set(OPEN_KEY, open ? '1' : '0');
+      setOpen(open);
+    });
+  }
+
+  root.GanttGeoTable = { fromLive, render, mount, setOpen, SRC_LABEL };
 })(window);

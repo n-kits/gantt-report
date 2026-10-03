@@ -137,13 +137,20 @@
         Колесо мыши — масштаб, перетаскивание — сдвиг.
       </p>
 
-      <h2 class="geo-h2">Задачи и топонимы</h2>
+      <!-- свёрнута / развёрнута — кнопкой в заголовке, выбор запоминается (js/map/geo-table.js) -->
+      <h2 class="geo-h2">
+        <button id="geo-table-toggle" class="fold" type="button" aria-expanded="false" aria-controls="geo-table-body">
+          <span class="fold-chev" aria-hidden="true"></span>Задачи и топонимы<span id="geo-table-count" class="fold-count"></span>
+        </button>
+      </h2>
+      <div id="geo-table-body" hidden>
       <p class="legend geo-src-legend">Источник координат:
         <span class="src cache">кэш</span> <span class="src nominatim">Nominatim</span>
         <span class="src basemap">полигон страны</span> <span class="src llm">оценка модели</span> (не подтверждено геокодером).
         «км» — насколько найденная точка отстоит от оценки модели; красным — больше 50 км.
       </p>
       <div id="geo-table" class="geo-table"></div>
+      </div>
     </section>
   </main>
 
