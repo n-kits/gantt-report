@@ -73,9 +73,9 @@ SYSTEM_PROMPT = """Ты — аналитик картографической р
 - name — в именительном падеже, как принято в русских СМИ;
 - kind — country (государство), region (регион, область, штат, провинция, район), settlement \
 (город, село, посёлок), water (море, река, озеро, залив, пролив, океан), other (остальное);
-- macro — макрорегион из контекста для точного геокодирования: для населённых пунктов, улиц и \
-объектов — область/край/провинция и страна («Донецкая область, Россия», «Курская область, Россия», \
-«провинция Идлиб, Сирия»); для регионов и водоёмов — страна или часть света; для стран — пустая строка;
+- region — для мест в России и на Украине: субъект РФ или область Украины, где находится объект, \
+строго одно значение из списка; для остальных стран, морей, рек и самих стран — пустая строка \
+(регион за пределами России и Украины укажи в query);
 - query — строка для геокодера OpenStreetMap: название, район (если известен), регион, страна, \
 через запятую, по-русски;
 - country — код страны ISO 3166-1 alpha-3 (для стран — код самой страны; для морей и океанов — \
@@ -106,13 +106,13 @@ SCHEMA = {
                             "properties": {
                                 "name": {"type": "string"},
                                 "kind": {"type": "string", "enum": ["country", "region", "settlement", "water", "other"]},
-                                "macro": {"type": "string"},
+                                "region": {"type": "string"},   # закрытый список — см. schema()
                                 "query": {"type": "string"},
                                 "country": {"type": "string"},
                                 "lat": {"type": "number"},
                                 "lon": {"type": "number"},
                             },
-                            "required": ["name", "kind", "macro", "query", "country", "lat", "lon"],
+                            "required": ["name", "kind", "region", "query", "country", "lat", "lon"],
                             "additionalProperties": False,
                         },
                     },
@@ -125,6 +125,22 @@ SCHEMA = {
     "required": ["items"],
     "additionalProperties": False,
 }
+
+
+_SCHEMA = None
+
+
+def schema() -> dict:
+    """SCHEMA с закрытым списком регионов (субъекты РФ и области Украины из справочника границ):
+    одинаковые формулировки во всех заказах — и подсказка геокодеру, и единый регион."""
+    global _SCHEMA
+    if _SCHEMA is None:
+        import copy
+        import places
+        _SCHEMA = copy.deepcopy(SCHEMA)
+        top = _SCHEMA["properties"]["items"]["items"]["properties"]["toponyms"]["items"]["properties"]
+        top["region"] = {"type": "string", "enum": [""] + places.region_enum()}
+    return _SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +318,7 @@ def analyze(tasks: list[dict], cfg: dict) -> dict:
             max_tokens=16000,
             **fb,
             output_config={"effort": cfg.get("llm_effort", "medium"),
-                           "format": {"type": "json_schema", "schema": SCHEMA}},
+                           "format": {"type": "json_schema", "schema": schema()}},
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": body}],
         )
@@ -362,7 +378,8 @@ class Geocoder:
         est = [t["lat"], t["lon"]] if isinstance(t.get("lat"), (int, float)) and isinstance(t.get("lon"), (int, float)) else None
         tol = TOLERANCE_KM.get(kind, 500)
         ok = lambda c: c and (est is None or km(c, est) <= tol)
-        macro = (t.get("macro") or "").split(",")[0].strip()
+        # подсказка геокодеру: регион из закрытого списка (старые ответы — первая часть macro)
+        macro = (t.get("region") or (t.get("macro") or "").split(",")[0]).strip()
         keys = [f"{name} ({macro})", name] if macro else [name]
 
         for k in keys:                                   # 1. кэш
@@ -459,13 +476,18 @@ def fetch_texts(ctx, base_url: str, todo: list[dict], limit: int) -> None:
 
 def published(llm: dict, got: dict | None) -> dict | None:
     """
-    Топоним для live.json: координаты или код страны, тип, макрорегион, источник координат
-    (cache / nominatim / llm / basemap) и расхождение с оценкой модели, км.
+    Топоним для live.json: координаты или код страны, тип, регион и страна по координатам, идентификатор
+    места (pid), регион по версии LLM (macro), источник координат (cache / nominatim / llm / basemap)
+    и расхождение с оценкой модели, км.
     """
     if not got:
         return None
+    import places
     p = {k: v for k, v in got.items() if not k.startswith("_")}
-    p["macro"] = llm.get("macro", "")
+    p["macro"] = llm.get("region") or llm.get("macro", "")       # как назвала LLM — для сверки
+    # регион, страна и идентификатор места — по координатам (places.py), а не по тексту LLM
+    c = places.canon(dict(p, iso=p.get("iso") or llm.get("country")))
+    p.update(region=c["region"], country=c["country"], pid=c["pid"])
     p["src"] = got.get("_src", "")
     if "lat" in got and p["src"] not in ("llm", "basemap") and isinstance(llm.get("lat"), (int, float)):
         p["dkm"] = round(km([llm["lat"], llm["lon"]], [got["lat"], got["lon"]]))

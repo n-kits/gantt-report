@@ -66,6 +66,12 @@ def workday(start: str, day_start_hour: int) -> str | None:
 def connect(path: Path) -> sqlite3.Connection:
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
+    # регион, страна и идентификатор места по координатам (places.py) — в базах до 10.2026 колонок нет
+    have = {r[1] for r in db.execute("PRAGMA table_info(toponyms)")}
+    for col in ("region", "country", "pid"):
+        if col not in have:
+            db.execute(f"ALTER TABLE toponyms ADD COLUMN {col} TEXT")
+    db.commit()
     return db
 
 
@@ -98,10 +104,11 @@ def update(db: sqlite3.Connection, cfg: dict, res: dict, geo_part: dict | None, 
                  it.get("model", ""), now))
             db.execute("DELETE FROM toponyms WHERE task_id = ?", (it["id"],))
             db.executemany(
-                """INSERT INTO toponyms (task_id, idx, name, kind, macro, iso, lat, lon, src, dkm, approx)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO toponyms (task_id, idx, name, kind, macro, iso, lat, lon, src, dkm, approx, region, country, pid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [(it["id"], i, p.get("name"), p.get("kind"), p.get("macro", ""), p.get("iso"), p.get("lat"), p.get("lon"),
-                  p.get("src", ""), p.get("dkm"), 1 if p.get("approx") else 0) for i, p in enumerate(it["toponyms"])])
+                  p.get("src", ""), p.get("dkm"), 1 if p.get("approx") else 0,
+                  p.get("region", ""), p.get("country", ""), p.get("pid")) for i, p in enumerate(it["toponyms"])])
     return n
 
 
@@ -150,8 +157,8 @@ def day_rows(db: sqlite3.Connection, day: str) -> list[list[str]]:
 TASK_HEADERS = ["ID", "Рабочий день", "Регистрация", "Задача", "Статус", "Завершение", "Исполнитель",
                 "Крайний срок", "Проект заказчика", "Вид продукции", "Выполнение задачи",
                 "Тема", "Конфликт", "Тональность", "Топонимы", "Описание", "Модель", "Последнее обновление", "Ссылка"]
-TOP_HEADERS = ["ID", "Задача", "Топоним", "Тип", "Макрорегион", "Страна (ISO)", "Широта", "Долгота",
-               "Источник координат", "Расхождение с оценкой, км", "Приблизительно"]
+TOP_HEADERS = ["ID", "Задача", "Топоним", "Тип", "Регион", "Страна", "Регион по версии LLM", "Страна (ISO)",
+               "Широта", "Долгота", "Источник координат", "Расхождение с оценкой, км", "Приблизительно"]
 SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны"}
 
 
@@ -172,7 +179,7 @@ def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, recor
     tasks = sorted(tasks, key=lambda r: parse_dt(r[2]) or datetime.min)
     base = cfg.get("bitrix_base", "https://crm.emg24.ru")
     tops = db.execute(
-        """SELECT p.task_id, t.name, p.name, p.kind, p.macro, p.iso, p.lat, p.lon, p.src, p.dkm, p.approx
+        """SELECT p.task_id, t.name, p.name, p.kind, p.region, p.country, p.macro, p.iso, p.lat, p.lon, p.src, p.dkm, p.approx
            FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE t.day = ? ORDER BY t.start, p.idx""", (day,)).fetchall()
 
     wb = Workbook()
@@ -199,8 +206,8 @@ def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, recor
           [list(r[:18]) + [base + r[18] if r[18] and r[18].startswith("/") else r[18]] for r in tasks],
           [10, 12, 17, 50, 15, 17, 18, 17, 18, 20, 40, 22, 18, 13, 40, 60, 18, 19, 30])
     sheet(wb.create_sheet("Топонимы"), TOP_HEADERS,
-          [list(r[:8]) + [SRC_LABEL.get(r[8], r[8]), r[9], "да" if r[10] else ""] for r in tops],
-          [10, 50, 28, 11, 34, 12, 10, 10, 18, 14, 14])
+          [list(r[:10]) + [SRC_LABEL.get(r[10], r[10]), r[11], "да" if r[12] else ""] for r in tops],
+          [10, 50, 28, 11, 30, 16, 30, 12, 10, 10, 18, 14, 14])
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{day}.xlsx"

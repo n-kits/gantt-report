@@ -30,7 +30,8 @@
    *     countries: [{ iso, name, count, today, byDay }] }
    * count — число разных задач с этим топонимом; today — есть хотя бы одна сегодняшняя;
    * byDay — [сегодня, вчера, позавчера и раньше] — задач по рабочим дням (сутки с 04:00).
-   * Одинаковые топонимы сливаются по названию (без регистра, ё = е) и близким координатам.
+   * Одинаковые топонимы сливаются по идентификатору места (pid от сборщика), в старых данных — по названию
+   * (без регистра, ё = е) и близким координатам.
    */
   function aggregate(geo, now) {
     const from = dayStart(now);
@@ -49,7 +50,8 @@
           bucket = countries;
           init = () => ({ iso: t.iso, name: t.name, count: 0, today: false, byDay: [0, 0, 0] });
         } else if (Number.isFinite(t.lat) && Number.isFinite(t.lon)) {
-          key = `${normName(t.name)}|${t.lat.toFixed(1)}|${t.lon.toFixed(1)}`;
+          // одно место — один идентификатор от сборщика (places.py); в старых данных — название + координаты
+          key = t.pid || `${normName(t.name)}|${t.lat.toFixed(1)}|${t.lon.toFixed(1)}`;
           bucket = points;
           init = () => ({ key, name: t.name, lat: t.lat, lon: t.lon, count: 0, today: false, byDay: [0, 0, 0], approx: !!t.approx });
         } else {

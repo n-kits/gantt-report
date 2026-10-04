@@ -437,6 +437,10 @@ def run(cfg: dict, dry_run: bool) -> int:
                 migrate_scrub(cfg)
             except Exception:  # noqa: BLE001 — повторится в следующий запуск
                 log.exception("Перечистка сохранённых текстов не удалась")
+            try:
+                migrate_places(cfg)
+            except Exception:  # noqa: BLE001 — повторится в следующий запуск
+                log.exception("Пересчёт мест в архиве не удался")
             geo_state = load_geo_state() if cfg.get("geo") else None
             res = fetch_tasks(cfg, geo_state)
             geo_part = None
@@ -572,6 +576,41 @@ def migrate_scrub(cfg: dict) -> None:
     mark.write_text(json.dumps({"version": scrub.VERSION, "at": utc_now_iso()}), encoding="utf-8")
     log.info("Очистка текстов (правила v%s): очередь %s, архив %s, Excel перевыгружено %s",
              scrub.VERSION, n_state, n_arch, n_xlsx)
+
+
+def migrate_places(cfg: dict) -> None:
+    """Правила «что это за место» (places.VERSION) сменились или ещё не применялись — пересчитать регион,
+    страну и идентификатор места у топонимов архива по координатам (без LLM) и перевыгрузить Excel."""
+    import archive
+    import places
+    mark = APP_DIR / "places.json"
+    try:
+        if json.loads(mark.read_text(encoding="utf-8")).get("version") == places.VERSION:
+            return
+    except (OSError, ValueError):
+        pass
+    n, days, exported = 0, set(), set()
+    if (APP_DIR / "archive.sqlite").exists():
+        gz = places.Gazetteer.get()
+        db = archive.connect(APP_DIR / "archive.sqlite")
+        try:
+            rows = db.execute("""SELECT p.task_id, p.idx, p.name, p.kind, p.iso, p.lat, p.lon, t.day
+                                 FROM toponyms p JOIN tasks t ON t.id = p.task_id""").fetchall()
+            with db:
+                for tid, idx, name, kind, iso, lat, lon, day in rows:
+                    c = places.canon({"name": name, "kind": kind, "iso": iso, "lat": lat, "lon": lon}, gz)
+                    db.execute("UPDATE toponyms SET region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?",
+                               (c["region"], c["country"], c["pid"], tid, idx))
+                    n += 1
+                    days.add(day)
+            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
+            for d in sorted(days & exported):
+                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
+        finally:
+            db.close()
+    mark.write_text(json.dumps({"version": places.VERSION, "at": utc_now_iso()}), encoding="utf-8")
+    log.info("Места (правила v%s): пересчитано топонимов %s, Excel перевыгружено %s",
+             places.VERSION, n, len(days & exported))
 
 
 def refresh_closed(cfg: dict, res: dict, lock: Lock) -> None:

@@ -15,6 +15,8 @@ import os
 import sys
 from pathlib import Path
 
+from places import SUSPICIOUS_KM
+
 
 REPO = Path(__file__).resolve().parent.parent.parent
 SRC = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector" / "geo-review.json"
@@ -72,6 +74,30 @@ def load_live(path: str, password: str = "test") -> dict:
     return {"now": p.get("now"), "items": p["geo"]["items"]}
 
 
+def suspicious_html() -> str:
+    """Подозрительные пары из архива (places.suspicious) — таблица для страницы проверки."""
+    import sqlite3
+    import places
+    db_path = SRC.parent / "archive.sqlite"
+    if not db_path.exists():
+        return '<p class="sub">Архива нет.</p>'
+    db = sqlite3.connect(db_path)
+    try:
+        rows = db.execute("SELECT pid, name, kind, country, region, lat, lon, task_id FROM toponyms WHERE pid IS NOT NULL").fetchall()
+    except sqlite3.OperationalError:
+        return '<p class="sub">В архиве ещё нет регионов по координатам — запустите сборщик.</p>'
+    finally:
+        db.close()
+    found = places.suspicious(rows)
+    if not found:
+        return '<p class="sub">Подозрительных пар нет.</p>'
+    cell = lambda x: f"{e(x['region'] or '—')}<br><span class=\"sub\">{x['lat']:.3f}, {x['lon']:.3f} · задачи {e(', '.join(sorted(x['tasks'])))}</span>"  # noqa: E731
+    body = "".join(f"<tr><td><b>{e(s['name'])}</b><br><span class=\"sub\">{e(s['country'])}</span></td>"
+                   f"<td>{cell(s['a'])}</td><td>{cell(s['b'])}</td><td>{s['km']} км</td></tr>" for s in found)
+    return (f'<table class="geo-tbl" style="width:auto"><tr><th>Название</th><th>Место 1</th><th>Место 2</th>'
+            f'<th>Между ними</th></tr>{body}</table>')
+
+
 def main():
     if "--compare-from" in sys.argv:
         # только страница сравнения вариантов точек — по сохранённому снимку
@@ -103,6 +129,7 @@ def main():
         f'<td class="val" data-var="{v}"></td><td>{e(desc)}</td></tr>' for v, desc in STYLES)
     # «</» внутри <script> закрыл бы тег раньше времени
     geo_json = json.dumps({"v": 1, "items": items}, ensure_ascii=False).replace("</", r"<\/")
+    check = suspicious_html()
 
     page = f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -138,6 +165,12 @@ def main():
     <span class="sw" style="background:var(--map-country-today);box-shadow:inset 0 0 0 1px var(--map-country-today-line)"></span>страна сегодня
     <span class="sw" style="background:var(--map-country-old)"></span>страна раньше. Пунктирный ободок — координаты по оценке модели.
   </p>
+
+  <h2 class="geo-h2">Проверить: одно название — разные места</h2>
+  <div class="sub">По всему локальному архиву: одно название в одной стране в разных местах дальше
+    {SUSPICIOUS_KM} км — это либо два разных места, либо ошибка LLM или геокодера. Исправить координаты —
+    <code>geocache.json</code> (ключ «Название (Регион)»).</div>
+  {check}
 
   <h2 class="geo-h2">Цвета карты</h2>
   <div class="sub">Меняются в <code>css/styles.css</code>, блок «Карта топонимов» (переменные <code>--map-*</code>).</div>

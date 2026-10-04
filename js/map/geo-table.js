@@ -43,8 +43,10 @@
     const src = t.src || '';
     const km = t.dkm != null ? ` <span class="km${t.dkm > FAR_KM ? ' far' : ''}">${t.dkm} км</span>` : '';
     const where = t.lat != null ? `${t.lat.toFixed(3)}, ${t.lon.toFixed(3)}` : (t.iso || '');
+    // регион и страна — по координатам (сборщик, places.py); в старых данных — как назвала LLM
+    const place = t.pid ? [t.region, t.kind === 'country' ? '' : t.country].filter(Boolean).join(', ') : t.macro;
     return `<li><b>${esc(t.name)}</b> <span class="kind">${esc(t.kind)}</span>` +
-      (t.macro ? ` · ${esc(t.macro)}` : '') +
+      (place ? ` · ${esc(place)}` : '') +
       (src ? ` <span class="src ${esc(src)}">${esc(SRC_LABEL[src] || src)}</span>` : '') +
       `${km} <span class="coord">${esc(where)}</span></li>`;
   }

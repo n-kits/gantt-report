@@ -144,6 +144,16 @@
     eq([byName['Москва'].byDay, byName['Сочи'].byDay, byName['Чёрное море'].byDay], [[1, 1, 0], [0, 1, 0], [0, 1, 0]], 'задачи по дням');
     const far = G.aggregate({ items: [{ id: '9', start: '25.09.2026 10:00:00', toponyms: [msk] }] }, at(28, 22));
     eq(far.points[0].byDay, [0, 0, 1], 'позавчера и раньше — в третью долю');
+    // одно место — один pid от сборщика, даже если LLM назвала регион по-разному и координаты чуть разные
+    const kzn = (lat, region) => ({ name: 'Казань', kind: 'settlement', lat, lon: 49.1, region, pid: 'place:казань:RU-TA' });
+    const one = G.aggregate({ items: [
+      { id: '1', start: '28.09.2026 10:00:00', toponyms: [kzn(55.79, 'Татарстан')] },
+      { id: '2', start: '28.09.2026 11:00:00', toponyms: [kzn(55.83, 'Республика Татарстан')] },
+      { id: '3', start: '28.09.2026 12:00:00', toponyms: [{ name: 'Днепр', kind: 'water', lat: 49.6, lon: 31.7, pid: 'water:днепр' },
+                                                            { name: 'Днепр', kind: 'settlement', lat: 48.5, lon: 35.0, pid: 'place:днепр:UA-12' }] },
+    ] }, at(28, 22));
+    eq(one.points.map(p => [p.key, p.count]).sort(), [['place:днепр:UA-12', 1], ['place:казань:RU-TA', 2], ['water:днепр', 1]],
+      'слияние по pid; город и река — разные места');
   });
 
   const out = document.getElementById('out');
