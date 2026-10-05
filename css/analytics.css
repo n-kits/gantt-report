@@ -45,6 +45,10 @@
   --an-early: #2A78D6;
   --an-late: #E34948;
   --an-median: #EDA100;      /* «штрихи»: медиана строки */
+  --an-morning: #EDA100;     /* Санкей: утро 04–15 */
+  --an-evening: #7E57C2;     /* вечер 15–02 */
+  --an-night: #1B3A4B;       /* ночь 02–04 — тёмно-синий шапки */
+  --an-later: #A8A59C;       /* срок на другой рабочий день */
   --an-link: #52514E;
   --an-hl: #C45C26;
   color: var(--an-ink); font-size: 14px; flex: 1;
@@ -194,3 +198,14 @@
 @media (max-width: 1240px) { #an-s-people .an-card { grid-column: span 12; } }
 /* на телефоне 8 колонок не помещаются никак — прокрутка внутри таблицы, а не всей страницы */
 @media (max-width: 700px) { .an details.tbl .scroll.full { overflow-x: auto; } }
+
+/* Санкей «От регистрации к крайнему сроку» */
+.an svg.an-sankey { display: block; overflow: visible; }
+.an svg.an-sankey .band { stroke-opacity: .5; transition: stroke-opacity .15s; }
+.an svg.an-sankey .band:hover { stroke-opacity: .85; }
+.an svg.an-sankey .band.dim { stroke-opacity: .08; }
+.an svg.an-sankey text.lbl { fill: var(--an-ink); font-size: 12px;
+  paint-order: stroke; stroke: var(--an-surface); stroke-width: 3px; stroke-linejoin: round; }   /* подложка: подпись поверх лент */
+#an-sankey { overflow-x: auto; }   /* на телефоне диаграмма шире экрана — прокрутка внутри карточки */
+.an svg.an-sankey text.col { fill: var(--an-muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+@media (prefers-reduced-motion: reduce) { .an svg.an-sankey .band { transition: none; } }

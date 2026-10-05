@@ -268,6 +268,25 @@
           <div class="an-chart" id="an-margin"></div>
           <details class="tbl"><summary>Таблица по видам продукции</summary><div class="scroll" id="an-margin-t"></div></details>
         </section>
+        <section class="an-card w12">
+          <div class="an-head"><h3>От регистрации к крайнему сроку</h3><span class="an-sub" id="an-sankey-sub"></span></div>
+          <p class="an-cap">Путь заказа: час регистрации → смена → на какую смену поставлен крайний срок (сегодня или на другой рабочий день) → час срока.
+            Сутки — с 04:00. Наведение на узел — его потоки.</p>
+          <div class="an-tools">
+            <div class="an-seg" id="an-sankey-mode" role="group" aria-label="Колонки">
+              <button type="button" data-m="full">Полный путь</button>
+              <button type="button" data-m="partial">Без смены регистрации</button>
+              <button type="button" data-m="direct">Напрямую</button>
+            </div>
+          </div>
+          <div class="an-legend">
+            <span><span class="sw" style="background:var(--an-morning)"></span>утро 04–15</span>
+            <span><span class="sw" style="background:var(--an-evening)"></span>вечер 15–02</span>
+            <span><span class="sw" style="background:var(--an-night)"></span>ночь 02–04</span>
+            <span><span class="sw" style="background:var(--an-later)"></span>срок на другой рабочий день</span>
+          </div>
+          <div class="an-chart" id="an-sankey"></div>
+        </section>
       </div>
     </div>
 
@@ -359,6 +378,7 @@
   <script src="js/analytics/data.js"></script>
   <script src="js/analytics/dashboard.js"></script>
   <script src="js/analytics/bundling.js"></script>
+  <script src="js/analytics/sankey.js"></script>
   <script src="js/analytics/app.js"></script>
   <script src="js/analytics/tab.js"></script>
 </body>

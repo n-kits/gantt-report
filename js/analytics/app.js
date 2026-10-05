@@ -14,13 +14,14 @@
   const KEY = 'gantt-analytics.v1';
   const D3_URL = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
   const PLOT_URL = 'https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6.17/dist/plot.umd.min.js';   // нужен d3
+  const SANKEY_URL = 'https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js';           // дописывает себя в d3
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project' };
+  const DEFAULTS = { days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
 
   const $ = id => document.getElementById('an-' + id);
-  let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, mounted = false;
+  let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, sankeyWait = null, mounted = false;
 
   // --- состояние ------------------------------------------------------------
   function load() {
@@ -104,6 +105,7 @@
     // «Насколько раньше и позже»: вид и строки «штрихов»
     document.querySelectorAll('#an-margin-view button').forEach(b => b.addEventListener('click', () => { st.marginView = b.dataset.v; save(); render(); }));
     document.querySelectorAll('#an-margin-rows button').forEach(b => b.addEventListener('click', () => { st.marginRows = b.dataset.r; save(); render(); }));
+    document.querySelectorAll('#an-sankey-mode button').forEach(b => b.addEventListener('click', () => { st.sankeyMode = b.dataset.m; save(); render(); }));
     let rt;
     addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (visible) render(); else dirty = true; }, 150); });
   }
@@ -133,6 +135,12 @@
     });
   }
   // Observable Plot — только для «Штрихов»; после d3
+  // d3-sankey — только для «От регистрации к крайнему сроку»; строго после d3 (иначе d3 затрёт его)
+  function ensureSankey() {
+    if (root.d3 && root.d3.sankey) return Promise.resolve();
+    if (!sankeyWait) sankeyWait = ensureD3().then(() => loadScript(SANKEY_URL, 'd3-sankey'));
+    return sankeyWait;
+  }
   function ensurePlot() {
     if (root.Plot) return Promise.resolve();
     if (!plotWait) plotWait = ensureD3().then(() => loadScript(PLOT_URL, 'Observable Plot'));
@@ -208,6 +216,7 @@
     const ticks = st.marginView === 'ticks';
     document.querySelectorAll('#an-margin-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.marginView)));
     document.querySelectorAll('#an-margin-rows button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === st.marginRows)));
+    document.querySelectorAll('#an-sankey-mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === st.sankeyMode)));
     $('margin-rows').hidden = !ticks;
     $('margin-legend-bars').hidden = ticks;
     $('margin-legend-ticks').hidden = !ticks;
@@ -218,11 +227,11 @@
     // скрыта (или ещё нулевой ширины) — нарисуем при показе: иначе графики возьмут минимальную ширину
     if (!visible || !$('kpis').offsetWidth) { dirty = true; return; }
     dirty = false;
-    const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot };
+    const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot, loadSankey: ensureSankey };
     marginControls();
     status();
     D.kpis(ctx); D.days(ctx); D.projects(ctx); D.heat(ctx);
-    D.lead(ctx); D.sla(ctx); D.margin(ctx);
+    D.lead(ctx); D.sla(ctx); D.margin(ctx); A.sankey.render(ctx);
     D.execs(ctx); D.geo(ctx);
     graphs();
   }
