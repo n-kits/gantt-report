@@ -158,11 +158,16 @@
   }
 
   function placeColors(groups) {
-    const named = groups.slice(0, 3);
+    // цвет — пять стран с наибольшим числом упоминаний (место × заказ) в окне, остальные серые;
+    // «акватории» (вода без страны) и «—» (место без страны) — не страны: всегда серые и в топ не входят
+    const NOT_COUNTRY = ['акватории', '—'];
+    const named = groups.filter(k => !NOT_COUNTRY.includes(k)).slice(0, SLOTS.length);
     const of = k => named.includes(k) ? SLOTS[named.indexOf(k)] : 'var(--an-other)';
-    const others = groups.length - named.length;
+    const extra = groups.filter(k => NOT_COUNTRY.includes(k));
+    const others = groups.length - named.length - extra.length;
+    const grey = label => `<span><span class="sw round" style="background:var(--an-other)"></span>${esc(label)}</span>`;
     return { of, legend: named.map(k => `<span><span class="sw round" style="background:${of(k)}"></span>${esc(k)}</span>`).join('') +
-      (others ? `<span><span class="sw round" style="background:var(--an-other)"></span>другие страны (${others})</span>` : '') };
+      (others ? grey(`другие страны (${others})`) : '') + extra.map(k => grey(k === '—' ? 'без страны' : k)).join('') };
   }
   function peopleColors(groups) {
     return { of: roleColor, legend: groups.map(k => `<span><span class="sw round" style="background:${roleColor(k)}"></span>${esc(k)}</span>`).join('') };
