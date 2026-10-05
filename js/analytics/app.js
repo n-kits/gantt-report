@@ -16,7 +16,7 @@
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { days: 14, project: '', product: '', person: '', beta: 0.85, minw: { people: 2, places: 1 }, winEnd: null };
+  const DEFAULTS = { days: 14, project: '', product: '', person: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null };
 
   const $ = id => document.getElementById('an-' + id);
   let M = null, st = null, visible = false, dirty = false, d3wait = null, mounted = false;
@@ -78,7 +78,7 @@
     $('project').addEventListener('change', e => update({ project: e.target.value }));
     $('product').addEventListener('change', e => update({ product: e.target.value }));
     $('reset').addEventListener('click', () => {
-      const keep = { beta: st.beta, minw: st.minw };
+      const keep = { beta: st.beta, betaPlaces: st.betaPlaces, minw: st.minw };
       st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null });
       sync(); render();
     });
@@ -91,6 +91,7 @@
     }));
     // графы связей
     $('beta').addEventListener('input', e => { st.beta = +e.target.value; save(); graphs(); });
+    $('beta-places').addEventListener('input', e => { st.betaPlaces = +e.target.value; save(); graphs(); });
     $('minw-people').addEventListener('input', e => { st.minw.people = +e.target.value; save(); graphs(); });
     $('minw-places').addEventListener('input', e => { st.minw.places = +e.target.value; save(); graphs(); });
     const shift = k => { st.winEnd = addDays(A.topWindow(st).to, k); save(); graphs(); };
@@ -147,10 +148,11 @@
       return;
     }
     $('beta').value = st.beta; $('beta-v').textContent = st.beta.toFixed(2);
+    $('beta-places').value = st.betaPlaces; $('beta-places-v').textContent = st.betaPlaces.toFixed(2);
     const list = filtered();
     // люди — за весь период
     const gp = A.graphPeople(M, list);
-    const rp = A.bundling.draw($('people-graph'), gp, { beta: st.beta, minw: st.minw.people, pin: st.person, color: peopleColors,
+    const rp = A.bundling.draw($('people-graph'), gp, { beta: st.beta, minw: st.minw.people, pin: st.person, color: peopleColors, linkedOnly: true, partnersOnly: true,
       legend: $('people-legend'), table: $('people-table'), title: 'Кто с кем работает' });
     slider('people', rp.maxW);
     $('people-sub').textContent = `людей ${fmtN(rp.n)} · связей ${fmtN(rp.shown)} из ${fmtN(rp.total)}`;
@@ -160,7 +162,7 @@
     const w = A.topWindow(st);
     const inWin = M.tasks.filter(t => A.inRange(t, w.from, w.to) && A.byDims(st)(t));
     const gl = A.graphPlaces(M, inWin);
-    const rl = A.bundling.draw($('places-graph'), gl, { beta: st.beta, minw: st.minw.places, color: placeColors,
+    const rl = A.bundling.draw($('places-graph'), gl, { beta: st.betaPlaces, minw: st.minw.places, color: placeColors, fitScreen: true,
       legend: $('places-legend'), table: $('places-table'), title: 'Какие места упоминаются вместе' });
     slider('places', rl.maxW);
     $('win-end').min = w.min; $('win-end').max = w.max; $('win-end').value = w.to;

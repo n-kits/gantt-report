@@ -77,6 +77,8 @@
 .an-col { grid-column: span 4; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .an-card { background: var(--an-surface); border: 1px solid var(--an-ring); border-radius: 10px; padding: 14px 16px 12px;
            grid-column: span 6; min-width: 0; }
+/* fit — высота по содержимому, а не по соседу в ряду (без пустого «подвала» рядом с высоким графом) */
+.an-card.fit { align-self: start; }
 .an-card.w12 { grid-column: span 12; } .an-card.w8 { grid-column: span 8; } .an-card.w4 { grid-column: span 4; }
 @media (max-width: 1000px) {
   .an-card, .an-card.w8, .an-card.w4, .an-col { grid-column: span 12; }
@@ -163,7 +165,7 @@
 .an svg.an-bundle text { font-size: inherit; fill: var(--an-ink-2); }
 .an svg.an-bundle text.on { fill: var(--an-ink); font-weight: 700; }
 .an svg.an-bundle text.off { fill: var(--an-muted); opacity: .55; }
-.an svg.an-bundle .link { fill: none; stroke: var(--an-link); }   /* без mix-blend-mode: сотни путей тормозят отрисовку */
-.an svg.an-bundle .link.hl { stroke: var(--an-hl); stroke-opacity: .95 !important; }
+.an svg.an-bundle .link { fill: none; stroke: var(--an-link); mix-blend-mode: multiply; }
+.an svg.an-bundle .link.hl { stroke: var(--an-hl); stroke-opacity: .95 !important; mix-blend-mode: normal; }
 .an svg.an-bundle .link.dim { stroke-opacity: .04 !important; }
 @media (forced-colors: active) { .an svg rect, .an svg path { forced-color-adjust: none; } }

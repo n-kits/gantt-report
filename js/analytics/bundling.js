@@ -14,6 +14,11 @@
   function draw(el, g, opts) {
     const d3 = root.d3;
     const ui = A.ui;
+    // linkedOnly — без узлов, у которых нет ни одного общего заказа с другими (люди, работавшие только в одиночку)
+    if (opts.linkedOnly) {
+      const linked = new Set(g.edges.flatMap(e => [e.a, e.b]));
+      g = Object.assign({}, g, { leaves: g.leaves.filter(l => linked.has(l.id)) });
+    }
     const edges = g.edges.filter(e => e.w >= opts.minw);
     const maxW = Math.max(1, ...g.edges.map(e => e.w));
     const n = g.leaves.length;
@@ -42,7 +47,15 @@
     const font = n <= 60 ? 13 : 11;                    // мало узлов — подписи крупнее
     const labelR = 22 + longest * font * 0.58;
     // мало узлов — фигура компактнее, чтобы не растягивать раздел на несколько экранов
-    const size = Math.max(560, Math.min(n <= 40 ? 760 : 1100, el.clientWidth || 800));
+    // fitScreen — фигура во всю полезную площадь: по ширине карточки, но целиком в высоту окна под панелью фильтров
+    let size;
+    if (opts.fitScreen) {
+      const bar = document.querySelector('.an-bar');
+      const top = bar && getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0;
+      size = Math.max(560, Math.min(el.clientWidth || 800, innerHeight - top - 16));
+    } else {
+      size = Math.max(560, Math.min(n <= 40 ? 760 : 1100, el.clientWidth || 800));
+    }
     const radius = size / 2 - labelR;
     const rootNode = d3.hierarchy(tree);
     d3.cluster().size([2 * Math.PI, radius]).separation((a, b) => a.parent === b.parent ? 1 : 2)(rootNode);
@@ -82,7 +95,7 @@
         const l = d.data.leaf, es = neighbors.get(l.id).slice().sort((a, b) => b.w - a.w);
         const other = e => byId.get(e.a === l.id ? e.b : e.a).data.name;
         ui.showTip(ev, `<div class="t">${esc(l.label)}</div><div class="g">${esc(g.groupWord)}: ${esc(l.group)}${l.note ? ' · ' + esc(l.note) : ''}</div>` +
-          `<div class="r"><span>Заказов</span><b>${fmtN(l.n)}</b></div>` +
+          (opts.partnersOnly ? (es.length ? '<div class="g">Совместных заказов</div>' : '') : `<div class="r"><span>Заказов</span><b>${fmtN(l.n)}</b></div>`) +
           (es.length ? es.slice(0, 6).map(e => `<div class="r"><span>${esc(other(e))}</span><b>${fmtN(e.w)}</b></div>`).join('') +
             (es.length > 6 ? `<div class="g">и ещё ${es.length - 6}</div>` : '') : '<div class="g">связей не слабее порога нет</div>'));
       })

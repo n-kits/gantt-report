@@ -195,7 +195,8 @@
         `<rect class="hit" data-i="${i}" x="${L + h * cw}" y="${T + d * ch}" width="${cw}" height="${ch}"/>`;
     }));
     WD.forEach((w, d) => { s += `<text x="${L - 6}" y="${T + d * ch + ch / 2 + 4}" text-anchor="end">${w}</text>`; });
-    for (let h = 0; h < 24; h += 3) s += `<text x="${L + h * cw + cw / 2}" y="${H - 6}" text-anchor="middle">${String(h).padStart(2, '0')}</text>`;
+    // каждый час; на узком экране (телефон) подписи не влезают — через 3 часа
+    for (let h = 0; h < 24; h += cw >= 20 ? 1 : 3) s +=`<text x="${L + h * cw + cw / 2}" y="${H - 6}" text-anchor="middle">${String(h).padStart(2, '0')}</text>`;
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Регистрации по дню недели и часу">${s}</svg>`;
     bindHits(el, items, it => `<div class="t">${WD[it.d]}, ${String(it.h).padStart(2, '0')}:00–${String(it.h + 1).padStart(2, '0')}:00</div>${row('', 'Заказов', fmtN(it.v))}`);
     ctx.$('heat-t').innerHTML = table(['Час', ...WD], Array.from({ length: 24 }, (_, h) => [String(h).padStart(2, '0') + ':00', ...WD.map((_, d) => m[d][h])]));

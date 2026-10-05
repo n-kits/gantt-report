@@ -121,7 +121,7 @@
     <div class="an-sec" id="an-s-people">
       <h2>Люди</h2>
       <div class="an-grid">
-        <section class="an-card w4">
+        <section class="an-card w4 fit">
           <h3>Исполнители</h3>
           <p class="an-cap">В скольких заказах человек есть в «Выполнении задачи»; цвет — профиль.
             Клик — подсветить его связи в графе.</p>
@@ -144,24 +144,22 @@
       </div>
     </div>
 
-    <!-- География: темы и регионы слева, граф мест справа -->
+    <!-- География: темы и регионы рядом, граф мест под ними — во всю ширину и высоту окна -->
     <div class="an-sec" id="an-s-geo">
       <h2>География <small id="an-geo-cap"></small></h2>
       <div class="an-grid">
-        <div class="an-col">
-          <section class="an-card">
-            <h3>Темы</h3>
-            <div class="an-chart" id="an-themes"></div>
-            <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-themes-t"></div></details>
-          </section>
-          <section class="an-card">
-            <h3>Регионы</h3>
-            <p class="an-cap">По координатам мест в заказе.</p>
-            <div class="an-chart" id="an-regions"></div>
-            <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-regions-t"></div></details>
-          </section>
-        </div>
-        <section class="an-card w8">
+        <section class="an-card">
+          <h3>Темы</h3>
+          <div class="an-chart" id="an-themes"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-themes-t"></div></details>
+        </section>
+        <section class="an-card">
+          <h3>Регионы</h3>
+          <p class="an-cap">По координатам мест в заказе.</p>
+          <div class="an-chart" id="an-regions"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-regions-t"></div></details>
+        </section>
+        <section class="an-card w12">
           <div class="an-head"><h3>Какие места упоминаются вместе</h3><span class="an-sub" id="an-places-sub"></span></div>
           <p class="an-cap">Страна → регион → место (по координатам). Связь — оба места в одном заказе; толще — чаще.
             Окно — 7 дней внутри выбранного периода.</p>
@@ -173,6 +171,7 @@
               <output id="an-win-range"></output>
             </span>
             <label>Связь не слабее <input id="an-minw-places" type="range" min="1" max="10" step="1"><output id="an-minw-places-v"></output></label>
+            <label>Натяжение пучков <input id="an-beta-places" type="range" min="0" max="1" step="0.05"><output id="an-beta-places-v"></output></label>
           </div>
           <div class="an-legend" id="an-places-legend"></div>
           <div class="an-graph" id="an-places-graph"></div>
