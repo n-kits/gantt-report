@@ -37,12 +37,32 @@
   // --- расшифровка ----------------------------------------------------------
   const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
+  // ключ PBKDF2 (250 000 итераций) вычисляется один раз на пароль и соль: сборщик шифрует все файлы
+  // (live.json, days/, analytics.json) с одной солью, поэтому ключ общий
+  const keys = new Map();
+  function keyFor(enc, password) {
+    const id = `${enc.iter}\u0001${enc.salt}\u0001${password}`;
+    if (!keys.has(id)) {
+      keys.set(id, crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+        .then(base => crypto.subtle.deriveKey(
+          { name: 'PBKDF2', hash: 'SHA-256', salt: unb64(enc.salt), iterations: enc.iter },
+          base, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])));
+      keys.get(id).catch(() => keys.delete(id));
+    }
+    return keys.get(id);
+  }
+
+  // "zip": "gzip" — данные сжаты до шифрования (analytics.json)
+  async function gunzip(buf) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('браузер не умеет распаковывать данные — обновите его');
+    const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).arrayBuffer();
+  }
+
   async function decrypt(enc, password) {
-    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', hash: 'SHA-256', salt: unb64(enc.salt), iterations: enc.iter },
-      base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, key, unb64(enc.data));
+    const key = await keyFor(enc, password);
+    let plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, key, unb64(enc.data));
+    if (enc.zip === 'gzip') plain = await gunzip(plain);
     return JSON.parse(new TextDecoder().decode(plain));
   }
 
@@ -143,6 +163,7 @@
     el.pass.value = '';
     renderBar();
     await show(true);
+    document.dispatchEvent(new Event('gantt-live-password'));   // вкладка «Аналитика» тоже расшифрует свои данные
   });
   el.back.addEventListener('click', () => {
     store.set(OFF_KEY, null);

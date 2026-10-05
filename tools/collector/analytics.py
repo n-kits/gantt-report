@@ -7,8 +7,8 @@
     python tools/collector/analytics.py     # → in/analytics.html — тестовый стенд (в .gitignore: реальные данные)
 
 Открыть через локальный сервер из корня репозитория: http://localhost:8765/in/analytics.html
-Код страницы — js/analytics/*.js и css/analytics.css (те же файлы подключит главная), разметка стенда —
-tools/collector/analytics.html. Фамилии картографов — "cartographers" в config.json сборщика, в репозиторий не попадают.
+Код вкладки — js/analytics/*.js и css/analytics.css, разметка — в index.html между метками analytics:begin/end
+(общая с главной), обёртка стенда — tools/collector/analytics.html. Фамилии картографов — "cartographers" в config.json сборщика, в репозиторий не попадают.
 """
 import base64
 import gzip
@@ -94,7 +94,10 @@ def main() -> int:
         payload = build(db, cart)
     finally:
         db.close()
-    page = (HERE / "analytics.html").read_text(encoding="utf-8").replace(
+    # разметка вкладки — одна на главную и стенд: берём её из index.html между метками
+    index = (REPO / "index.html").read_text(encoding="utf-8")
+    panel = index[index.index("<!-- analytics:begin -->") + len("<!-- analytics:begin -->"):index.index("<!-- analytics:end -->")]
+    page = (HERE / "analytics.html").read_text(encoding="utf-8").replace("__PANEL__", panel.strip("\r\n") + "\n").replace(
         "__DATA__", json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/"))
     OUT.write_text(page, encoding="utf-8")
     raw, gz, enc = sizes(payload)

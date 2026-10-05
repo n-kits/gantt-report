@@ -72,6 +72,7 @@ DEFAULTS = {
     "archive": True,            # локальный архив задач (archive.sqlite) и выгрузка выпавших дней в Excel
     "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив
     "publish_days": True,       # архив по дням в ветку data (days/ГГГГ-ММ-ДД.json, зашифровано) — календарик на сайте
+    "publish_analytics": True,  # вкладка «Аналитика»: весь архив одним файлом (analytics.json, gzip + шифрование)
     "refresh_days": 14,         # раз в сутки перечитывать столько закрытых дней: на сайте и в Excel — текущие статусы
     "history_url": None,        # пресет Bitrix для --backfill и обновления, без ограничения по давности; None — tasks_url
     "chunk_days": 3,            # --backfill и обновление ходят в Bitrix кусками по столько суток
@@ -330,15 +331,45 @@ def b64(b: bytes) -> str:
     return base64.b64encode(b).decode("ascii")
 
 
-def encrypt(payload: dict, password: str, iterations: int) -> dict:
+def kdf_salt(password: str, iterations: int) -> bytes:
+    """Одна соль PBKDF2 на все файлы (live.json, days/, analytics.json): браузер вычисляет ключ один раз,
+    а не на каждый файл (250 000 итераций — заметные доли секунды). Уникальность шифрования даёт случайный iv
+    каждого файла. Соль хранится на этом ПК и меняется вместе с паролем или числом итераций."""
+    path = APP_DIR / "kdf-salt.json"
+    tag = hashlib.sha256(f"{password}\0{iterations}".encode("utf-8")).hexdigest()
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if saved.get("tag") == tag:
+            return base64.b64decode(saved["salt"])
+    except (OSError, ValueError, KeyError):
+        pass
+    salt = os.urandom(16)
+    path.write_text(json.dumps({"tag": tag, "salt": b64(salt)}), encoding="utf-8")
+    return salt
+
+
+_keys: dict[tuple, bytes] = {}
+
+
+def encrypt(payload: dict, password: str, iterations: int, compress: bool = False) -> dict:
+    """compress — gzip до шифрования (зашифрованное уже не сожмётся при передаче); в конверте "zip": "gzip"."""
+    import gzip
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-    salt, iv = os.urandom(16), os.urandom(12)
-    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations).derive(password.encode("utf-8"))
-    data = AESGCM(key).encrypt(iv, json.dumps(payload, ensure_ascii=False).encode("utf-8"), None)
-    return {"alg": "AES-GCM", "kdf": "PBKDF2-SHA256", "iter": iterations, "salt": b64(salt), "iv": b64(iv), "data": b64(data)}
+    salt, iv = kdf_salt(password, iterations), os.urandom(12)
+    k = (password, iterations, salt)
+    if k not in _keys:
+        _keys[k] = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations).derive(password.encode("utf-8"))
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":") if compress else None).encode("utf-8")
+    if compress:
+        raw = gzip.compress(raw, 9, mtime=0)
+    data = AESGCM(_keys[k]).encrypt(iv, raw, None)
+    enc = {"alg": "AES-GCM", "kdf": "PBKDF2-SHA256", "iter": iterations, "salt": b64(salt), "iv": b64(iv), "data": b64(data)}
+    if compress:
+        enc["zip"] = "gzip"
+    return enc
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +394,8 @@ def write_days(db, out_dir: Path, password: str, iterations: int, hashes_path: P
         hashes = json.loads(hashes_path.read_text(encoding="utf-8")) if hashes_path else {}
     except (OSError, ValueError):
         hashes = {}
-    salt = hashlib.sha256(f"{password}\0{iterations}".encode("utf-8")).hexdigest()   # смена пароля → перешифровать всё
+    # смена пароля или общей соли → перешифровать всё
+    salt = hashlib.sha256(f"{password}\0{iterations}\0{b64(kdf_salt(password, iterations))}".encode("utf-8")).hexdigest()
     index, changed = {}, 0
     for day, checked in archive.days_checked(db):
         rows = archive.day_rows(db, day)
@@ -397,6 +429,33 @@ def publish_days(cfg: dict) -> None:
         log.info("Архив по дням: переписано файлов %s", n)
 
 
+def publish_analytics(cfg: dict) -> None:
+    """Вкладка «Аналитика»: весь архив одним файлом analytics.json (tools/collector/analytics.py, без описаний задач),
+    gzip + шифрование тем же паролем. Файл переписывается, только если изменились данные."""
+    import analytics
+    import archive
+    db = archive.connect(APP_DIR / "archive.sqlite")
+    try:
+        payload = analytics.build(db, cfg.get("cartographers") or [])
+    finally:
+        db.close()
+    salt = b64(kdf_salt(cfg["password"], cfg["kdf_iterations"]))
+    body = {k: v for k, v in payload.items() if k != "generatedAt"}
+    h = hashlib.sha256((salt + json.dumps(body, ensure_ascii=False, sort_keys=True)).encode("utf-8")).hexdigest()
+    state_path, out = APP_DIR / "analytics-published.json", DATA_REPO / "analytics.json"
+    try:
+        if json.loads(state_path.read_text(encoding="utf-8")).get("hash") == h and out.exists():
+            return
+    except (OSError, ValueError):
+        pass
+    payload["generatedAt"] = datetime.now().strftime("%Y-%m-%dT%H:%M")
+    enc = encrypt(payload, cfg["password"], cfg["kdf_iterations"], compress=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"v": 1, "generatedAt": utc_now_iso(), "enc": enc}, ensure_ascii=False), encoding="utf-8")
+    state_path.write_text(json.dumps({"hash": h, "at": utc_now_iso()}), encoding="utf-8")
+    log.info("Аналитика: analytics.json переписан (%s заказов, %s КБ)", len(payload["tasks"]), round(len(enc["data"]) / 1024))
+
+
 def publish(cfg: dict, envelope: dict | None) -> None:
     """envelope=None — live.json не трогаем (публикуется только архив по дням)."""
     if not (DATA_REPO / ".git").exists():
@@ -408,7 +467,8 @@ def publish(cfg: dict, envelope: dict | None) -> None:
     if envelope is not None:
         (DATA_REPO / cfg["data_file"]).write_text(json.dumps(envelope, ensure_ascii=False, indent=1), encoding="utf-8")
     (DATA_REPO / "README.md").write_text(
-        "Служебная ветка: зашифрованные данные «живой» ленты (live.json) и архив по дням (days/). "
+        "Служебная ветка: зашифрованные данные «живой» ленты (live.json), архив по дням (days/) "
+        "и вкладка «Аналитика» (analytics.json). "
         "Перезаписывается сборщиком (tools/collector/collect.py), истории нет.\n", encoding="utf-8")
     git("add", "-A")
     # всегда один коммит без родителей: история данных не копится
@@ -459,6 +519,8 @@ def run(cfg: dict, dry_run: bool) -> int:
                         refresh_closed(cfg, res, lock)
                         if cfg.get("publish_days"):
                             publish_days(cfg)
+                        if cfg.get("publish_analytics"):
+                            publish_analytics(cfg)
                 except Exception:  # noqa: BLE001 — архив не должен мешать публикации
                     log.exception("Архив не обновлён")
         payload = {"rows": res["rows"], "now": res["now"], "range": res["range"], "sourceName": cfg["source_name"]}
@@ -662,6 +724,8 @@ def backfill(cfg: dict, d_from: date, d_to: date) -> int:
             log.info("Догружено дней %s, файлов архива переписано %s", len(days), n)
         finally:
             db.close()
+        if cfg.get("publish_analytics"):
+            publish_analytics(cfg)
     try:
         publish(cfg, None)
     except CollectError as e:
