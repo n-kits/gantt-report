@@ -566,6 +566,43 @@ def run(cfg: dict, dry_run: bool) -> int:
     return code
 
 
+def llm_retry(cfg: dict, ids: list[str]) -> int:
+    """Неудачный анализ (сбой API, отказ модели) сборщик повторяет сам — через 1 и 2 ч, и бросает после 3 попыток.
+    Здесь счётчик неудач сбрасывается: следующий запуск снова разберёт эти задачи (текст уже скачан, в Bitrix не ходит).
+    Без номеров — все задачи очереди без результата. Работает для задач живого окна (3 дня); старше — llm_archive.py."""
+    import geo
+    path = APP_DIR / "geo-state.json"
+    try:
+        with Lock():
+            state = load_geo_state()
+            reset = []
+            for tid, st in state["tasks"].items():
+                if "result" in st or (ids and tid not in ids):
+                    continue
+                if "attempts" in st or "failedAt" in st:
+                    st.pop("attempts", None)
+                    st.pop("failedAt", None)
+                    reset.append(tid)
+            if reset:
+                geo._save_json(path, state)
+    except CollectError as e:
+        print(f"{e} — повторите через минуту-две.")
+        return 1
+    unknown = [i for i in ids if i not in state["tasks"]]
+    if reset:
+        print(f"Сброшен счётчик неудач у {len(reset)}: {', '.join(reset)}. "
+              "Их разберёт следующий запуск сборщика (сразу — python collect.py).")
+    else:
+        print("Задач с неудачным анализом в очереди нет.")
+    if unknown:
+        print(f"Нет в очереди живого окна: {', '.join(unknown)} — для старых задач: "
+              "python llm_archive.py fetch, затем python llm_archive.py apply --variant B")
+    if not cfg.get("llm", False):
+        print("Внимание: LLM выключен — анализ не пойдёт, пока не включить: python collect.py --llm on")
+    log.info("LLM: повтор анализа вручную — %s", ", ".join(reset) or "нечего сбрасывать")
+    return 0
+
+
 def llm_switch(cfg: dict, mode: str) -> int:
     """«Кнопка стоп» для LLM: пишет "llm" в config.json; действует со следующего запуска сборщика."""
     if mode != "status":
@@ -788,6 +825,8 @@ def main(argv=None) -> int:
     g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
     g.add_argument("--export-day", metavar="ГГГГ-ММ-ДД", help="выгрузить день из архива в Excel (заново)")
     g.add_argument("--llm", choices=["on", "off", "status"], help="включить / выключить анализ задач через Claude")
+    g.add_argument("--llm-retry", nargs="*", metavar="ID",
+                   help="повторить неудавшийся анализ (все задачи очереди или указанные номера) в следующий запуск")
     g.add_argument("--backfill", nargs="+", metavar="ГГГГ-ММ-ДД",
                    help="догрузить рабочие дни из Bitrix в архив и на сайт: С [ПО] (по умолчанию — по сегодня)")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
@@ -812,6 +851,8 @@ def main(argv=None) -> int:
         return 0
     if args.llm:
         return llm_switch(cfg, args.llm)
+    if args.llm_retry is not None:
+        return llm_retry(cfg, args.llm_retry)
     if args.export_day:
         import archive
         db = archive.connect(APP_DIR / "archive.sqlite")
