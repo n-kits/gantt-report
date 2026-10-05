@@ -17,7 +17,7 @@
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { days: 14, project: '', product: '', person: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project' };
+  const DEFAULTS = { days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project' };
 
   const $ = id => document.getElementById('an-' + id);
   let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, mounted = false;
@@ -100,6 +100,7 @@
     $('win-next').addEventListener('click', () => shift(1));
     $('win-end').addEventListener('change', e => { if (e.target.value) { st.winEnd = e.target.value; save(); graphs(); } });
     $('person-clear').addEventListener('click', () => update({ person: '' }));
+    $('place-clear').addEventListener('click', () => { st.place = ''; save(); graphs(); });
     // «Насколько раньше и позже»: вид и строки «штрихов»
     document.querySelectorAll('#an-margin-view button').forEach(b => b.addEventListener('click', () => { st.marginView = b.dataset.v; save(); render(); }));
     document.querySelectorAll('#an-margin-rows button').forEach(b => b.addEventListener('click', () => { st.marginRows = b.dataset.r; save(); render(); }));
@@ -173,7 +174,7 @@
     const list = filtered();
     // люди — за весь период
     const gp = A.graphPeople(M, list);
-    const rp = A.bundling.draw($('people-graph'), gp, { beta: st.beta, minw: st.minw.people, pin: st.person, color: peopleColors, linkedOnly: true, partnersOnly: true,
+    const rp = A.bundling.draw($('people-graph'), gp, { beta: st.beta, minw: st.minw.people, pin: st.person, onPin: id => update({ person: id }), color: peopleColors, linkedOnly: true, partnersOnly: true,
       legend: $('people-legend'), table: $('people-table'), title: 'Кто с кем работает' });
     slider('people', rp.maxW);
     $('people-sub').textContent = `людей ${fmtN(rp.n)} · связей ${fmtN(rp.shown)} из ${fmtN(rp.total)}`;
@@ -184,8 +185,13 @@
     const inWin = M.tasks.filter(t => A.inRange(t, w.from, w.to) && A.byDims(st)(t));
     const gl = A.graphPlaces(M, inWin);
     const rl = A.bundling.draw($('places-graph'), gl, { beta: st.betaPlaces, minw: st.minw.places, color: placeColors, fitScreen: true,
+      pin: st.place, onPin: id => { st.place = id; save(); graphs(); },
       legend: $('places-legend'), table: $('places-table'), title: 'Какие места упоминаются вместе' });
     slider('places', rl.maxW);
+    // закреплённое место может не попасть в окно — подсветка вернётся, когда окно до него дойдёт
+    const place = st.place && M.places[st.place];
+    $('place-pin').hidden = !place;
+    $('place-name').textContent = place ? place.name + (rl.pinned ? '' : ' — нет в этом окне') : '';
     $('win-end').min = w.min; $('win-end').max = w.max; $('win-end').value = w.to;
     $('win-range').textContent = `${A.util.dm(w.from)}–${A.util.dm(w.to)}`;
     $('win-prev').disabled = w.to <= w.min; $('win-next').disabled = w.to >= w.max;

@@ -1,8 +1,8 @@
 /*
  * Вкладка «Аналитика»: граф связей (hierarchical edge bundling, d3 v7) — исполнители и топонимы.
  * По мотивам https://observablehq.com/@d3/hierarchical-edge-bundling
- * draw(el, g, opts): g — граф из data.js (graphPeople / graphPlaces), opts — beta, minw, pin (узел, подсвеченный
- * щелчком снаружи), color(группа), legend и table — элементы для легенды и таблицы связей.
+ * draw(el, g, opts): g — граф из data.js (graphPeople / graphPlaces), opts — beta, minw, pin (закреплённо подсвеченный
+ * узел), onPin(id) — щелчок по подписи ('' — снять), color(группа), legend и table — элементы для легенды и таблицы связей.
  */
 (function (root) {
   'use strict';
@@ -112,7 +112,10 @@
           (es.length ? es.slice(0, 6).map(e => `<div class="r"><span>${esc(other(e))}</span><b>${fmtN(e.w)}</b></div>`).join('') +
             (es.length > 6 ? `<div class="g">и ещё ${es.length - 6}</div>` : '') : '<div class="g">связей не слабее порога нет</div>'));
       })
-      .on('mouseleave', () => { focus(pin); ui.hideTip(); });
+      .on('mouseleave', () => { focus(pin); ui.hideTip(); })
+      // щелчок — закрепить подсветку (повторный — снять); состояние хранит вызывающий через onPin
+      .on('click', (ev, d) => { if (opts.onPin) { ui.hideTip(); opts.onPin(d.data.leaf.id === pin ? '' : d.data.leaf.id); } })
+      .style('cursor', opts.onPin ? 'pointer' : null);
 
     function focus(id) {
       if (!id || !neighbors.has(id)) { links.classed('hl', false).classed('dim', false); leaf.select('text').classed('on', false).classed('off', false); return; }
@@ -130,7 +133,7 @@
     opts.table.innerHTML = `<table><thead><tr><th>Связь</th><th class="n">Общих заказов</th></tr></thead><tbody>` +
       g.edges.slice().sort((a, b) => b.w - a.w).slice(0, 60).map(e => `<tr><td>${esc(name(e.a))} — ${esc(name(e.b))}</td><td class="n">${e.w}</td></tr>`).join('') +
       `</tbody></table>`;
-    return { shown: edges.length, total: g.edges.length, maxW, n };
+    return { shown: edges.length, total: g.edges.length, maxW, n, pinned: !!pin };
   }
 
   A.bundling = { draw };
