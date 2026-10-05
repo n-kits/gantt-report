@@ -209,7 +209,8 @@
 
   function render() {
     if (!M) return;
-    if (!visible) { dirty = true; return; }
+    // скрыта (или ещё нулевой ширины) — нарисуем при показе: иначе графики возьмут минимальную ширину
+    if (!visible || !$('kpis').offsetWidth) { dirty = true; return; }
     dirty = false;
     const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot };
     marginControls();

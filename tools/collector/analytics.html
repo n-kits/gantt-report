@@ -48,7 +48,7 @@ __PANEL__
         document.getElementById('panel-' + k).hidden = k !== tab;
       });
       A.setVisible(tab === 'analytics');
-      if (tab === 'analytics' && !loaded) { loaded = true; A.setData(window.ANALYTICS_DATA); document.getElementById('panel-analytics').classList.remove('an-wait'); }
+      if (tab === 'analytics' && !loaded) { loaded = true; document.getElementById('panel-analytics').classList.remove('an-wait'); A.setData(window.ANALYTICS_DATA); }
     }
     addEventListener('hashchange', show);
     show();

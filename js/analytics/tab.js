@@ -61,8 +61,9 @@
       }
       say('');
       shownAt = envelope.generatedAt;
-      A.setData(payload);
+      // сначала показать содержимое, потом рисовать: в скрытом блоке у графиков нулевая ширина
       $('panel-analytics').classList.remove('an-wait');
+      A.setData(payload);
     } finally {
       busy = false;
     }
