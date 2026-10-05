@@ -1,0 +1,353 @@
+<!doctype html>
+<!--
+  Шаблон hierarchical edge bundling. Данные подставляет tools/collector/bundling.py → in/bundling.html
+  (локально, в .gitignore). По мотивам https://observablehq.com/@d3/hierarchical-edge-bundling
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Связи: исполнители и топонимы</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f4f1ea; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11, 11, 11, .10); --brand: #0f2c3a;
+    --link: #52514e; --hl: #c45c26; --hover-wash: rgba(11, 11, 11, .04);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --other: #b5b3ab;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, .10);
+      --link: #c3c2b7; --hl: #e07a43; --hover-wash: rgba(255, 255, 255, .05);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --other: #5a5955;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, .10);
+    --link: #c3c2b7; --hl: #e07a43; --hover-wash: rgba(255, 255, 255, .05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --other: #5a5955;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--page); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; }
+  .top { background: var(--brand); color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: baseline;
+         justify-content: space-between; gap: 4px 16px; }
+  .top h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .top .sub { color: #d4cfc4; font-size: 13px; }
+  .top button { font: inherit; font-size: 12px; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,.35);
+                border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: var(--surface);
+             border-bottom: 1px solid var(--ring); position: sticky; top: 0; z-index: 5; }
+  .seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 13px; padding: 4px 12px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--axis); }
+  .seg button:hover { background: var(--hover-wash); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600; }
+  .filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .filters select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis);
+                    border-radius: 6px; height: 28px; }
+  .win { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .win[hidden], .filters label[hidden] { display: none; }
+  .win input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis);
+               border-radius: 6px; height: 28px; padding: 0 6px; }
+  .arrow { font: inherit; font-size: 16px; line-height: 1; width: 28px; height: 28px; border: 1px solid var(--axis);
+           border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+  .arrow:hover { background: var(--hover-wash); }
+  .arrow:disabled { opacity: .35; cursor: default; }
+  .filters output { font-variant-numeric: tabular-nums; min-width: 28px; color: var(--ink); font-weight: 600; }
+  main { padding: 16px; max-width: 1360px; margin: 0 auto; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .cap { margin: 2px 0 8px; font-size: 12.5px; color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  #chart { display: flex; justify-content: center; }
+  #chart svg { max-width: 100%; height: auto; overflow: visible; }
+  svg text { font-family: inherit; font-size: inherit; fill: var(--ink-2); }
+  svg text.on { fill: var(--ink); font-weight: 700; }
+  svg text.off { fill: var(--muted); opacity: .55; }
+  svg .link { fill: none; stroke: var(--link); mix-blend-mode: multiply; }
+  :root[data-theme="dark"] svg .link { mix-blend-mode: screen; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) svg .link { mix-blend-mode: screen; } }
+  svg .link.hl { stroke: var(--hl); stroke-opacity: .95 !important; mix-blend-mode: normal; }
+  svg .link.dim { stroke-opacity: .04 !important; }
+  svg .leaf { cursor: default; }
+  details.tbl { margin-top: 8px; font-size: 12.5px; }
+  details.tbl summary { cursor: pointer; color: var(--ink-2); width: max-content; }
+  details.tbl table { border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  details.tbl th, details.tbl td { text-align: left; padding: 3px 10px; border-bottom: 1px solid var(--grid); }
+  details.tbl td.n, details.tbl th.n { text-align: right; }
+  details.tbl .scroll { max-height: 320px; overflow: auto; }
+  .tip { position: fixed; z-index: 20; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+         border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.14); padding: 8px 10px; font-size: 12.5px; max-width: 300px; }
+  .tip .t { font-weight: 600; } .tip .g { color: var(--ink-2); margin-bottom: 4px; }
+  .tip .r { display: flex; justify-content: space-between; gap: 12px; } .tip .r b { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="viz-root">
+<header class="top">
+  <div><h1>Связи</h1><div class="sub" id="sub"></div></div>
+  <div class="sub">Пример по локальному архиву · <button id="theme" type="button">Тема</button></div>
+</header>
+<div class="filters">
+  <div class="seg" id="mode" role="group" aria-label="Схема">
+    <button type="button" data-mode="execs">Исполнители</button>
+    <button type="button" data-mode="tops">Топонимы</button>
+  </div>
+  <label id="period-wrap">Период
+    <select id="period">
+      <option value="0">весь архив</option>
+      <option value="30">30 дней</option>
+      <option value="14">14 дней</option>
+      <option value="7">7 дней</option>
+    </select></label>
+  <!-- топонимы: окно в 7 дней, двигается стрелками или датой последнего дня -->
+  <span id="win" class="win" hidden>Окно 7 дней
+    <button id="win-prev" class="arrow" type="button" title="На день раньше">‹</button>
+    <input id="win-end" type="date" title="Последний день окна">
+    <button id="win-next" class="arrow" type="button" title="На день позже">›</button>
+    <output id="win-range"></output>
+  </span>
+  <label>Натяжение пучков <input id="beta" type="range" min="0" max="1" step="0.05"><output id="beta-v"></output></label>
+  <label>Связь не слабее <input id="minw" type="range" min="1" max="10" step="1"><output id="minw-v"></output></label>
+</div>
+<main>
+  <section class="card">
+    <h2 id="title"></h2>
+    <p class="cap" id="cap"></p>
+    <div class="legend" id="legend"></div>
+    <div id="chart"></div>
+    <details class="tbl"><summary>Таблица связей</summary><div class="scroll" id="table"></div></details>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  const DATA = __DATA__;
+  const KEY = 'gantt-bundling.v2';
+  // профили закреплены вручную (по фамилии); все остальные, в том числе новые люди, — дизайнеры
+  // фамилии картографов — из локального config.json сборщика ("cartographers"), в репозитории их нет
+  const CARTOGRAPHERS = DATA.cartographers || [];
+  const profile = name => CARTOGRAPHERS.includes(name.split(' ')[0]) ? 'Картограф' : 'Дизайнер';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const nf = new Intl.NumberFormat('ru-RU');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const plural = (n, f) => f[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+
+  let st;
+  try { st = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { st = null; }
+  st = Object.assign({ mode: 'execs', period: 0, beta: 0.85, minw: { execs: 2, tops: 1 }, winEnd: null }, st || {});
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* не критично */ } };
+
+  const allDays = [...new Set([...DATA.execs, ...DATA.tops].map(t => t.day))].sort();
+  const lastDay = allDays[allDays.length - 1];
+  const addDays = (s, k) => { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + k); return d.toISOString().slice(0, 10); };
+  const inPeriod = t => !st.period || t.day >= addDays(lastDay, 1 - st.period);
+  // топонимы — только окно в 7 дней, конец окна двигается
+  const WIN = 7;
+  const topDays = [...new Set(DATA.tops.map(t => t.day))].sort();
+  const topFirst = topDays[0] || lastDay, topLast = topDays[topDays.length - 1] || lastDay;
+  const winEnd = () => {
+    let e = st.winEnd && st.winEnd <= topLast ? st.winEnd : topLast;
+    const min = addDays(topFirst, WIN - 1);
+    return e < min ? (min <= topLast ? min : topLast) : e;
+  };
+  const inWindow = t => { const e = winEnd(); return t.day <= e && t.day >= addDays(e, 1 - WIN); };
+  const dm = s => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
+
+  // --- граф: листья в иерархии + взвешенные связи (общие заказы) ---------------------
+  function pairs(list, key) {
+    const w = new Map();
+    list.forEach(items => {
+      const ks = [...new Set(items.map(key))].sort();
+      for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+        const k = ks[i] + '\u0002' + ks[j]; w.set(k, (w.get(k) || 0) + 1);   // \u0001 — внутри id топонима
+      }
+    });
+    return [...w.entries()].map(([k, v]) => { const [a, b] = k.split('\u0002'); return { a, b, w: v }; });
+  }
+
+  function graphExecs() {
+    const tasks = DATA.execs.filter(inPeriod);
+    const persons = new Map();
+    tasks.forEach(t => t.people.forEach(name => persons.set(name, (persons.get(name) || 0) + 1)));
+    const leaves = [...persons.entries()].map(([name, n]) => ({ id: name, label: name, group: profile(name), sub: null, n }));
+    return { leaves, edges: pairs(tasks.map(t => t.people), name => name), unit: ['общий заказ', 'общих заказа', 'общих заказов'],
+             title: 'Исполнители: кто с кем работает над одними заказами',
+             cap: 'Связь — общие заказы; толще — чаще.',
+             groupWord: 'Профиль' };
+  }
+
+  function graphTops() {
+    const tasks = DATA.tops.filter(inWindow);
+    const id = x => x.pid;                          // одно место — один идентификатор (places.py)
+    const nodes = new Map();
+    tasks.forEach(t => t.tops.forEach(x => {
+      const k = id(x), o = nodes.get(k) || { id: k, label: x.name, group: x.country, sub: x.region, n: 0 };
+      o.n++; nodes.set(k, o);
+    }));
+    [...nodes.values()].forEach(o => { o.note = o.sub; });
+    return { leaves: [...nodes.values()], edges: pairs(tasks.map(t => t.tops), id), unit: ['общий заказ', 'общих заказа', 'общих заказов'],
+             title: 'Топонимы: какие места упоминаются в одних заказах',
+             cap: 'Страна → регион → топоним; регион и страна — по координатам места. Связь — оба места есть в одном заказе; толще — чаще.',
+             groupWord: 'Страна' };
+  }
+
+  // --- отрисовка --------------------------------------------------------------
+  const tip = document.getElementById('tip');
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  function render() {
+    const g = st.mode === 'execs' ? graphExecs() : graphTops();
+    const minw = st.minw[st.mode];
+    const edges = g.edges.filter(e => e.w >= minw);
+    const maxW = Math.max(1, ...g.edges.map(e => e.w));
+    const minEl = document.getElementById('minw');
+    minEl.max = Math.max(2, Math.min(maxW, 30)); minEl.value = minw;
+    document.getElementById('minw-v').textContent = minw;
+    document.getElementById('beta').value = st.beta;
+    document.getElementById('beta-v').textContent = st.beta.toFixed(2);
+    document.querySelectorAll('#mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === st.mode)));
+    document.getElementById('period').value = String(st.period);
+    const tops = st.mode === 'tops';
+    document.getElementById('period-wrap').hidden = tops;
+    document.getElementById('win').hidden = !tops;
+    if (tops) {
+      const e = winEnd(), we = document.getElementById('win-end');
+      we.min = addDays(topFirst, WIN - 1) <= topLast ? addDays(topFirst, WIN - 1) : topLast;
+      we.max = topLast; we.value = e;
+      document.getElementById('win-range').textContent = `${dm(addDays(e, 1 - WIN))}–${dm(e)}`;
+      document.getElementById('win-prev').disabled = e <= we.min;
+      document.getElementById('win-next').disabled = e >= topLast;
+    }
+    document.getElementById('title').textContent = g.title;
+    document.getElementById('cap').textContent = g.cap;
+
+    // группы по размеру; цвет — первые пять групп, остальные серые («Другое» / прочие страны)
+    const groupN = d3.rollup(g.leaves, v => d3.sum(v, d => d.n), d => d.group);
+    const groups = [...groupN.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    const named = groups.filter(k => k !== 'Другое').slice(0, st.mode === 'execs' ? 5 : 3);
+    const color = k => named.includes(k) ? SLOTS[named.indexOf(k)] : 'var(--other)';
+    const others = groups.filter(k => !named.includes(k));
+    document.getElementById('legend').innerHTML = named.map(k => `<span><span class="sw" style="background:${color(k)}"></span>${esc(k)}</span>`).join('') +
+      (others.length ? `<span><span class="sw" style="background:var(--other)"></span>${st.mode === 'execs' ? 'Другое' : `другие страны (${others.length})`}</span>` : '');
+
+    // иерархия: корень → группа → (регион) → лист
+    const tree = { name: '', children: groups.map(k => {
+      const ls = g.leaves.filter(l => l.group === k);
+      if (st.mode === 'execs') return { name: k, children: ls.map(l => ({ name: l.label, leaf: l })) };
+      const subs = d3.group(ls, l => l.sub);
+      return { name: k, children: [...subs.entries()].sort((a, b) => d3.sum(b[1], x => x.n) - d3.sum(a[1], x => x.n))
+        .map(([sk, sl]) => ({ name: sk, children: sl.map(l => ({ name: l.label, leaf: l })) })) };
+    }) };
+    const el = document.getElementById('chart');
+    const n = g.leaves.length;
+    if (!n) { el.innerHTML = '<p class="cap">Нет данных за период</p>'; document.getElementById('table').innerHTML = ''; return; }
+    const longest = d3.max(g.leaves, l => Math.min(28, l.label.length)) || 10;
+    const font = n <= 60 ? 13 : 11;                    // мало узлов — подписи крупнее
+    const labelR = 22 + longest * font * 0.58;
+    const box = el.clientWidth || 900;
+    const size = Math.max(640, Math.min(1180, box));   // фигура — во всю ширину карточки
+    const radius = size / 2 - labelR;
+    const root = d3.hierarchy(tree);
+    d3.cluster().size([2 * Math.PI, radius]).separation((a, b) => a.parent === b.parent ? 1 : 2)(root);
+    const byId = new Map(root.leaves().map(d => [d.data.leaf.id, d]));
+    const line = d3.lineRadial().curve(d3.curveBundle.beta(st.beta)).radius(d => d.y).angle(d => d.x);
+    const width = d3.scaleSqrt().domain([1, maxW]).range([0.8, 4.5]);
+    const op = d3.scaleLinear().domain([1, maxW]).range([0.22, 0.75]);
+
+    const svg = d3.create('svg').attr('viewBox', [-size / 2, -size / 2, size, size]).attr('width', size).attr('height', size)
+      .style('font-size', font + 'px')
+      .attr('role', 'img').attr('aria-label', g.title);
+    // дуги групп — у внутреннего края подписей
+    const arc = d3.arc().innerRadius(radius + 3).outerRadius(radius + 6);
+    for (const grp of root.children) {
+      const ls = grp.leaves(), a0 = d3.min(ls, d => d.x) - 0.012, a1 = d3.max(ls, d => d.x) + 0.012;
+      svg.append('path').attr('d', arc({ startAngle: a0, endAngle: a1 })).attr('fill', color(grp.data.name));
+    }
+    const links = svg.append('g').selectAll('path').data(edges.sort((a, b) => a.w - b.w)).join('path')
+      .attr('class', 'link').attr('d', e => line(byId.get(e.a).path(byId.get(e.b))))
+      .attr('stroke-width', e => width(e.w)).attr('stroke-opacity', e => op(e.w))
+      .on('mousemove', (ev, e) => showTip(ev, `<div class="t">${esc(byId.get(e.a).data.name)} — ${esc(byId.get(e.b).data.name)}</div>` +
+        `<div class="r"><span>${nf.format(e.w)} ${plural(e.w, g.unit)}</span></div>`))
+      .on('mouseleave', hideTip);
+    const neighbors = new Map(g.leaves.map(l => [l.id, []]));
+    edges.forEach(e => { neighbors.get(e.a).push(e); neighbors.get(e.b).push(e); });
+
+    const leaf = svg.append('g').selectAll('g').data(root.leaves()).join('g').attr('class', 'leaf')
+      .attr('transform', d => `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y + 10},0)`);
+    leaf.append('text').attr('dy', '0.31em').attr('x', d => d.x < Math.PI ? 0 : 0)
+      .attr('text-anchor', d => d.x < Math.PI ? 'start' : 'end')
+      .attr('transform', d => d.x >= Math.PI ? 'rotate(180)' : null)
+      .text(d => d.data.name.length > 28 ? d.data.name.slice(0, 27) + '…' : d.data.name);
+    // зона наведения — поверх подписи, снаружи круга на обеих половинах: подпись слева развёрнута на 180°,
+    // но в системе координат узла всё равно идёт наружу (+x), поэтому прямоугольник не разворачиваем
+    leaf.append('rect').attr('x', -4).attr('y', -font / 2 - 1).attr('width', labelR - 6).attr('height', font + 2)
+      .attr('fill', 'transparent')
+      .on('mouseenter', (ev, d) => focus(d.data.leaf.id, true))
+      .on('mousemove', (ev, d) => {
+        const l = d.data.leaf, es = neighbors.get(l.id).slice().sort((a, b) => b.w - a.w);
+        const other = e => byId.get(e.a === l.id ? e.b : e.a).data.name;
+        showTip(ev, `<div class="t">${esc(l.label)}</div><div class="g">${esc(g.groupWord)}: ${esc(l.group)}${l.note ? ' · ' + esc(l.note) : ''}</div>` +
+          `<div class="r"><span>Заказов</span><b>${nf.format(l.n)}</b></div>` +
+          (es.length ? es.slice(0, 6).map(e => `<div class="r"><span>${esc(other(e))}</span><b>${nf.format(e.w)}</b></div>`).join('') +
+            (es.length > 6 ? `<div class="g">и ещё ${es.length - 6}</div>` : '') : '<div class="g">связей не слабее порога нет</div>'));
+      })
+      .on('mouseleave', () => { focus(null); hideTip(); });
+
+    function focus(id) {
+      if (!id) { links.classed('hl', false).classed('dim', false); leaf.select('text').classed('on', false).classed('off', false); return; }
+      const near = new Set([id]);
+      neighbors.get(id).forEach(e => { near.add(e.a); near.add(e.b); });
+      links.classed('hl', e => e.a === id || e.b === id).classed('dim', e => e.a !== id && e.b !== id);
+      links.filter(e => e.a === id || e.b === id).raise();
+      leaf.select('text').classed('on', d => near.has(d.data.leaf.id)).classed('off', d => !near.has(d.data.leaf.id));
+    }
+
+    el.replaceChildren(svg.node());
+    const tasksN = (st.mode === 'execs' ? DATA.execs.filter(inPeriod) : DATA.tops.filter(inWindow)).length;
+    document.getElementById('sub').textContent =
+      `${st.mode === 'tops' ? `окно ${dm(addDays(winEnd(), 1 - WIN))}–${dm(winEnd())}` : st.period ? `последние ${st.period} дн.` : 'весь архив'} · заказов ${nf.format(tasksN)} · ` +
+      `${st.mode === 'execs' ? 'людей' : 'топонимов'} ${nf.format(n)} · связей ${nf.format(edges.length)} из ${nf.format(g.edges.length)}`;
+    const name = id => byId.get(id).data.name;
+    document.getElementById('table').innerHTML = `<table><thead><tr><th>Связь</th><th class="n">Общих заказов</th></tr></thead><tbody>` +
+      g.edges.slice().sort((a, b) => b.w - a.w).slice(0, 60).map(e => `<tr><td>${esc(name(e.a))} — ${esc(name(e.b))}</td><td class="n">${e.w}</td></tr>`).join('') +
+      `</tbody></table>`;
+  }
+
+  document.querySelectorAll('#mode button').forEach(b => b.addEventListener('click', () => { st.mode = b.dataset.mode; save(); render(); }));
+  document.getElementById('period').addEventListener('change', e => { st.period = +e.target.value; save(); render(); });
+  const shiftWin = k => { st.winEnd = addDays(winEnd(), k); save(); render(); };
+  document.getElementById('win-prev').addEventListener('click', () => shiftWin(-1));
+  document.getElementById('win-next').addEventListener('click', () => shiftWin(1));
+  document.getElementById('win-end').addEventListener('change', e => { if (e.target.value) { st.winEnd = e.target.value; save(); render(); } });
+  document.getElementById('beta').addEventListener('input', e => { st.beta = +e.target.value; save(); render(); });
+  document.getElementById('minw').addEventListener('input', e => { st.minw[st.mode] = +e.target.value; save(); render(); });
+  document.getElementById('theme').addEventListener('click', () => {
+    const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    r.dataset.theme = dark ? 'light' : 'dark';
+  });
+  let rt;
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+  render();
+})();
+</script>
+</body>
+</html>

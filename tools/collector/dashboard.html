@@ -1,0 +1,704 @@
+<!doctype html>
+<!--
+  Шаблон примера дэшборда. Данные подставляет tools/collector/dashboard.py → in/dashboard.html
+  (локально, в .gitignore: там реальные задачи и исполнители). На сайт не публикуется.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сводка заказов</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f4f1ea;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --ring: rgba(11, 11, 11, .10);
+    --brand: #0f2c3a;
+    --accent: #c45c26;
+    --s1: #2a78d6;          /* Плазма */
+    --s2: #eb6834;          /* Анимированная карта */
+    --s3: #1baf7a;          /* Анимационный ролик */
+    --other: #c3c2b7;       /* Другое */
+    --seq: #1c5cab;         /* тепловая карта: один тон, прозрачность — величина */
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --good-ink: #006300;
+    --early: #2a78d6;       /* раньше срока */
+    --late: #e34948;        /* позже срока */
+    --critical-ink: #b42318;
+    --hover-wash: rgba(11, 11, 11, .04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, .10); --brand: #0f2c3a; --accent: #e07a43;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --other: #5a5955; --seq: #3987e5;
+      --good-ink: #0ca30c; --critical-ink: #e66767; --early: #3987e5; --late: #e66767; --hover-wash: rgba(255, 255, 255, .05);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, .10); --brand: #0f2c3a; --accent: #e07a43;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --other: #5a5955; --seq: #3987e5;
+    --good-ink: #0ca30c; --critical-ink: #e66767; --early: #3987e5; --late: #e66767; --hover-wash: rgba(255, 255, 255, .05);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+  }
+  .top { background: var(--brand); color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap;
+         align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+  .top h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .top .sub { color: #d4cfc4; font-size: 13px; }
+  .top .note { color: #d4cfc4; font-size: 12px; }
+  .top button { font: inherit; font-size: 12px; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,.35);
+                border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+
+  /* фильтры — одной строкой над графиками */
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px;
+             background: var(--surface); border-bottom: 1px solid var(--ring); position: sticky; top: 0; z-index: 5; }
+  .seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 13px; padding: 4px 10px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--axis); }
+  .seg button:hover { background: var(--hover-wash); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600; }
+  .filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .filters input, .filters select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+             border: 1px solid var(--axis); border-radius: 6px; padding: 3px 6px; height: 28px; }
+  .filters select { max-width: 220px; }
+  .linkbtn { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
+  .linkbtn:hover { text-decoration: underline; }
+
+  main { padding: 16px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; max-width: 1480px; margin: 0 auto; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 14px 16px 12px;
+          grid-column: span 6; min-width: 0; }
+  .card.w12 { grid-column: span 12; } .card.w8 { grid-column: span 8; } .card.w4 { grid-column: span 4; }
+  @media (max-width: 1000px) { .card, .card.w8, .card.w4 { grid-column: span 12; } }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card .cap { margin: 2px 0 10px; font-size: 12.5px; color: var(--ink-2); }
+  .chart { width: 100%; position: relative; }
+  .chart svg { display: block; overflow: visible; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
+  .kpis.two-kpi { grid-template-columns: repeat(4, 1fr); margin-bottom: 10px; }
+  @media (max-width: 1000px) { .kpis.two-kpi { grid-template-columns: 1fr 1fr; } }
+  .empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+  /* цифры */
+  .kpis { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 16px; align-items: end; }
+  @media (max-width: 1000px) { .kpis { grid-template-columns: 1fr 1fr; } }
+  .kpi .label { font-size: 13px; color: var(--ink-2); }
+  .kpi .value { font-size: 30px; font-weight: 600; line-height: 1.15; margin-top: 2px; }
+  .kpi.hero .value { font-size: 56px; }
+  .kpi .delta { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+  .kpi .delta b { font-weight: 600; color: var(--ink); }
+
+  /* легенда */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .legend button { font: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; border-radius: 4px;
+                   display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .legend button:hover { background: var(--hover-wash); }
+  .legend button[aria-pressed="false"] { opacity: .45; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+  .ico { font-weight: 700; }
+
+  /* таблица-дубль под графиком */
+  details.tbl { margin-top: 8px; font-size: 12.5px; }
+  details.tbl summary { cursor: pointer; color: var(--ink-2); width: max-content; }
+  details.tbl table { border-collapse: collapse; margin-top: 6px; width: 100%; font-variant-numeric: tabular-nums; }
+  details.tbl th, details.tbl td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--grid); }
+  details.tbl td.n, details.tbl th.n { text-align: right; }
+  details.tbl .scroll { max-height: 260px; overflow: auto; }
+
+  /* подсказка */
+  .tip { position: fixed; z-index: 20; pointer-events: none; background: var(--surface); color: var(--ink);
+         border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.14);
+         padding: 8px 10px; font-size: 12.5px; min-width: 140px; max-width: 280px; }
+  .tip .t { font-weight: 600; margin-bottom: 4px; }
+  .tip .r { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+  .tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .tip .r b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  svg text.lbl { fill: var(--ink-2); font-size: 12px; }
+  svg text.val { fill: var(--ink); font-size: 12px; font-weight: 600; }
+  svg .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  svg .baseline { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+  svg .hit { fill: transparent; cursor: default; }
+  svg .hit.click { cursor: pointer; }
+  svg .hit:hover { fill: var(--hover-wash); }
+  svg .dim { opacity: .3; }
+  @media (forced-colors: active) { svg rect, svg path { forced-color-adjust: none; } }
+</style>
+</head>
+<body class="viz-root">
+<header class="top">
+  <div>
+    <h1>Сводка заказов</h1>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="note">Пример по локальному архиву · на сайте не публикуется ·
+    <button id="theme" type="button" title="Светлая / тёмная тема">Тема</button></div>
+</header>
+
+<div class="filters" role="group" aria-label="Фильтры">
+  <div class="seg" id="presets" role="group" aria-label="Период">
+    <button type="button" data-days="7">7 дней</button>
+    <button type="button" data-days="14">14 дней</button>
+    <button type="button" data-days="30">30 дней</button>
+    <button type="button" data-days="0">Весь архив</button>
+  </div>
+  <label>с <input type="date" id="from"></label>
+  <label>по <input type="date" id="to"></label>
+  <label>Проект <select id="project"></select></label>
+  <label>Вид продукции <select id="product"></select></label>
+  <button class="linkbtn" id="reset" type="button">Сбросить</button>
+</div>
+
+<main>
+  <section class="card w12">
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="card w8">
+    <h2>Заказы по дням</h2>
+    <p class="cap">Рабочий день — с 04:00 до 04:00, по времени регистрации; цвет — вид продукции. Клик по легенде — фильтр.</p>
+    <div class="legend" id="days-legend"></div>
+    <div class="chart" id="days"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="days-t"></div></details>
+  </section>
+
+  <section class="card w4">
+    <h2>Проекты</h2>
+    <p class="cap">Заказов за период. Клик по строке — фильтр по проекту.</p>
+    <div class="chart" id="projects"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="projects-t"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Когда приходят заказы</h2>
+    <p class="cap">Регистрации по дню недели и часу; насыщеннее цвет — больше заказов.</p>
+    <div class="chart" id="heat"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="heat-t"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Время выполнения</h2>
+    <p class="cap">От регистрации до завершения, завершённые заказы.</p>
+    <div class="chart" id="lead"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="lead-t"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Соблюдение срока по видам продукции</h2>
+    <p class="cap">Завершённые заказы с крайним сроком: доля сделанных в срок и с нарушением.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--good)"></span><span class="ico" style="color:var(--good-ink)">✓</span> в срок</span>
+      <span><span class="sw" style="background:var(--critical)"></span><span class="ico" style="color:var(--critical-ink)">!</span> с нарушением срока</span>
+    </div>
+    <div class="chart" id="sla"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="sla-t"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Исполнители</h2>
+    <p class="cap">В скольких заказах человек есть в колонке «Выполнение задачи» (над заказом бывает несколько человек);
+      в подсказке — медиана выполнения и доля в срок этих заказов.</p>
+    <div class="chart" id="execs"></div>
+    <details class="tbl"><summary>Таблица</summary><div class="scroll" id="execs-t"></div></details>
+  </section>
+
+  <section class="card w12">
+    <h2>Насколько раньше и позже крайнего срока</h2>
+    <p class="cap">Завершённые заказы с крайним сроком: разница между сроком и фактическим завершением.
+      Как на оси времени: слева — завершено раньше срока, справа — позже; чем дальше от срока, тем насыщеннее цвет.</p>
+    <div class="kpis two-kpi" id="margin-kpis"></div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--early)"></span>раньше срока</span>
+      <span><span class="sw" style="background:var(--late)"></span>позже срока</span>
+    </div>
+    <div class="chart" id="margin"></div>
+    <details class="tbl"><summary>Таблица по видам продукции</summary><div class="scroll" id="margin-t"></div></details>
+  </section>
+
+  <section class="card w12">
+    <h2>Темы и регионы</h2>
+    <p class="cap" id="geo-cap"></p>
+    <!-- две колонки: под каждым графиком — своя таблица -->
+    <div class="two">
+      <div>
+        <div class="chart" id="themes"></div>
+        <details class="tbl"><summary>Таблица</summary><div class="scroll" id="themes-t"></div></details>
+      </div>
+      <div>
+        <div class="chart" id="regions"></div>
+        <details class="tbl"><summary>Таблица</summary><div class="scroll" id="regions-t"></div></details>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  const DATA = __DATA__;
+  const KEY = 'gantt-dashboard.v1';
+  const HOUR = 3600000, DAY = 86400000;
+
+  // --- данные ---------------------------------------------------------------
+  const PRODUCTS = [
+    { key: 'plasma', label: 'Плазма', color: 'var(--s1)', test: p => /^Плазма/.test(p) },
+    { key: 'map', label: 'Анимированная карта', color: 'var(--s2)', test: p => p === 'Анимированная карта' },
+    { key: 'clip', label: 'Overmap\\Overglobe', color: 'var(--s3)', test: p => /^Анимационный ролик/.test(p) },
+    { key: 'other', label: 'Другое', color: 'var(--other)', test: () => true },
+  ];
+  const productKey = p => PRODUCTS.find(x => x.test(p)).key;
+
+  const tasks = DATA.tasks.map(t => {
+    const start = t.start ? new Date(t.start) : null, finish = t.finish ? new Date(t.finish) : null;
+    const deadline = t.deadline ? new Date(t.deadline) : null;
+    const done = t.status === 'Завершена' && finish;
+    return Object.assign({}, t, {
+      startD: start, finishD: finish, deadlineD: deadline, pkey: productKey(t.product),
+      lead: done && start ? (finish - start) / HOUR : null,
+      onTime: done && deadline ? finish <= deadline : null,
+    });
+  });
+  const allDays = [...new Set(tasks.map(t => t.day))].sort();
+  const firstDay = allDays[0], lastDay = allDays[allDays.length - 1];
+
+  // --- формат ---------------------------------------------------------------
+  const nf = new Intl.NumberFormat('ru-RU');
+  const fmtN = n => nf.format(n);
+  const fmt1 = n => (Math.round(n * 10) / 10).toLocaleString('ru-RU');
+  const fmtPct = x => x == null ? '—' : Math.round(x * 100) + '%';
+  const fmtH = h => h == null ? '—' : h < 1 ? Math.round(h * 60) + ' мин' : h >= 48 ? fmt1(h / 24) + ' сут' : fmt1(h) + ' ч';
+  const plural = (n, f) => f[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+  const dm = s => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
+  const dmy = s => `${dm(s)}.${s.slice(0, 4)}`;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const addDays = (s, k) => { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + k); return d.toISOString().slice(0, 10); };
+  const span = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / DAY) + 1;
+  const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  // круглые деления оси: шаг 1/2/5×10^k, 3–5 делений
+  function ticks(v) {
+    const raw = Math.max(1, v) / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = Math.max(1, [1, 2, 5, 10].map(m => m * p).find(x => x >= raw));
+    const top = Math.max(step, Math.ceil(Math.max(1, v) / step) * step);
+    const out = []; for (let t = 0; t <= top + 1e-9; t += step) out.push(t);
+    return { top, list: out };
+  }
+
+  // --- состояние ------------------------------------------------------------
+  let st;
+  try { st = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { st = null; }
+  st = Object.assign({ from: addDays(lastDay, -13), to: lastDay, project: '', product: '' }, st || {});
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* не критично */ } };
+
+  const inRange = (t, a, b) => t.day >= a && t.day <= b;
+  const byDims = t => (!st.project || t.project === st.project) && (!st.product || t.pkey === st.product);
+  const filtered = () => tasks.filter(t => inRange(t, st.from, st.to) && byDims(t));
+
+  // --- подсказка ------------------------------------------------------------
+  const tip = document.getElementById('tip');
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.hidden = true; };
+  const row = (sw, label, val) => `<div class="r"><span>${sw ? `<span class="sw" style="background:${sw}"></span>` : ''}${esc(label)}</span><b>${val}</b></div>`;
+  function bindHits(root, items, html, onClick) {
+    root.querySelectorAll('[data-i]').forEach(n => {
+      const it = items[+n.dataset.i];
+      n.addEventListener('mousemove', e => showTip(e, html(it)));
+      n.addEventListener('mouseleave', hideTip);
+      if (onClick) n.addEventListener('click', () => { hideTip(); onClick(it); });
+    });
+  }
+  const table = (head, rows) => `<table><thead><tr>${head.map((h, i) => `<th class="${i ? 'n' : ''}">${esc(h)}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i ? 'n' : ''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+
+  // скруглённый на конце столбик: 4px со стороны данных, прямой у основания
+  function colPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  }
+  function barPath(x, y, w, h, r) {
+    r = Math.min(r, h / 2, w);
+    return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+  }
+  const widthOf = el => Math.max(260, el.clientWidth);
+
+  // --- цифры ----------------------------------------------------------------
+  function renderKpis(list) {
+    const n = list.length, days = span(st.from, st.to);
+    const prevTo = addDays(st.from, -1), prevFrom = addDays(st.from, -days);
+    const prev = prevFrom >= firstDay ? tasks.filter(t => inRange(t, prevFrom, prevTo) && byDims(t)).length : null;
+    let delta = 'нет данных за предыдущий такой же период';
+    if (prev != null && prev > 0) {
+      const d = (n - prev) / prev;
+      delta = `<b>${d >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(d * 100))}%</b> к ${dm(prevFrom)}–${dm(prevTo)} (${fmtN(prev)})`;
+    }
+    const sla = list.filter(t => t.onTime != null), ok = sla.filter(t => t.onTime).length;
+    const leads = list.map(t => t.lead).filter(v => v != null);
+    const team = list.filter(t => t.workers.length >= 2).length;
+    document.getElementById('kpis').innerHTML = [
+      `<div class="kpi hero"><div class="label">Заказов за период</div><div class="value">${fmtN(n)}</div><div class="delta">${delta}</div></div>`,
+      `<div class="kpi"><div class="label">В срок</div><div class="value">${fmtPct(sla.length ? ok / sla.length : null)}</div>` +
+        `<div class="delta">с нарушением — ${fmtN(sla.length - ok)} из ${fmtN(sla.length)}</div></div>`,
+      `<div class="kpi"><div class="label">Медиана выполнения</div><div class="value">${fmtH(median(leads))}</div>` +
+        `<div class="delta">от регистрации до завершения</div></div>`,
+      `<div class="kpi"><div class="label">В среднем за день</div><div class="value">${fmt1(n / days)}</div>` +
+        `<div class="delta">за ${fmtN(days)} дн.</div></div>`,
+      `<div class="kpi"><div class="label">Совместные</div><div class="value">${fmtPct(n ? team / n : null)}</div>` +
+        `<div class="delta">2 и больше исполнителей</div></div>`,
+    ].join('');
+  }
+
+  // --- заказы по дням: столбики с разбивкой по видам продукции ------------------
+  function renderDays(list) {
+    const el = document.getElementById('days');
+    const days = []; for (let d = st.from; d <= st.to; d = addDays(d, 1)) days.push(d);
+    const shown = PRODUCTS.filter(p => !st.product || p.key === st.product);
+    const by = days.map(d => {
+      const o = { day: d, total: 0 }; PRODUCTS.forEach(p => { o[p.key] = 0; });
+      return o;
+    });
+    const idx = Object.fromEntries(days.map((d, i) => [d, i]));
+    list.forEach(t => { const o = by[idx[t.day]]; if (o) { o[t.pkey]++; o.total++; } });
+
+    document.getElementById('days-legend').innerHTML = PRODUCTS.map(p =>
+      `<button type="button" data-p="${p.key}" aria-pressed="${!st.product || st.product === p.key}"><span class="sw" style="background:${p.color}"></span>${p.label}</button>`).join('');
+    document.querySelectorAll('#days-legend button').forEach(b => b.addEventListener('click', () => {
+      st.product = st.product === b.dataset.p ? '' : b.dataset.p; sync(); render();
+    }));
+
+    const W = widthOf(el), H = 240, L = 34, R = 8, T = 10, B = 26;
+    const tk = ticks(Math.max(...by.map(o => o.total))), max = tk.top;
+    const band = (W - L - R) / days.length, bw = Math.min(24, Math.max(3, band * 0.7));
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let s = '';
+    tk.list.forEach((v, k) => {
+      const yy = Math.round(y(v)) + .5;
+      s += `<line class="${k ? 'gridline' : 'baseline'}" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/>` +
+        `<text x="${L - 6}" y="${yy + 4}" text-anchor="end">${fmtN(v)}</text>`;
+    });
+    const every = Math.max(1, Math.ceil(days.length / Math.floor((W - L) / 46)));
+    by.forEach((o, i) => {
+      const x = L + band * i + (band - bw) / 2;
+      let acc = 0;
+      const segs = shown.filter(p => o[p.key]);
+      segs.forEach((p, j) => {
+        const y0 = y(acc), y1 = y(acc + o[p.key]);
+        const gap = j < segs.length - 1 ? 2 : 0;           // 2px зазор цвета фона между сегментами
+        const h = Math.max(0, y0 - y1);
+        const top = j === segs.length - 1;
+        s += top ? `<path d="${colPath(x, y1, bw, h, 4)}" fill="${p.color}"/>`
+                 : `<rect x="${x}" y="${y1 + gap}" width="${bw}" height="${Math.max(0, h - gap)}" fill="${p.color}"/>`;
+        acc += o[p.key];
+      });
+      if (i % every === 0) {
+        const wd = new Date(o.day + 'T12:00').getDay();
+        s += `<text x="${L + band * i + band / 2}" y="${H - 8}" text-anchor="middle"${wd === 0 || wd === 6 ? ' style="font-weight:600"' : ''}>${dm(o.day)}</text>`;
+      }
+      s += `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Заказы по дням">${s}</svg>`;
+    bindHits(el, by, o => {
+      const wd = new Date(o.day + 'T12:00').toLocaleDateString('ru-RU', { weekday: 'long' });
+      return `<div class="t">${dmy(o.day)}, ${wd}</div>` + shown.filter(p => o[p.key]).reverse().map(p => row(p.color, p.label, fmtN(o[p.key]))).join('') +
+        row('', 'Всего', fmtN(shown.reduce((a, p) => a + o[p.key], 0)));
+    });
+    document.getElementById('days-t').innerHTML = table(['День', ...shown.map(p => p.label), 'Всего'],
+      by.map(o => [dmy(o.day), ...shown.map(p => o[p.key]), shown.reduce((a, p) => a + o[p.key], 0)]));
+  }
+
+  // --- горизонтальные столбики ----------------------------------------------
+  function hbars(el, items, opts) {
+    opts = opts || {};
+    if (!items.length) { el.innerHTML = '<div class="empty">Нет данных за период</div>'; return; }
+    const W = widthOf(el), rowH = 26, bh = 16, labelW = Math.min(opts.labelW || 190, W * 0.46), valW = 44;
+    const H = items.length * rowH + 4;
+    const max = Math.max(1, ...items.map(it => it.value));
+    const x = v => (W - labelW - valW) * v / max;
+    let s = `<line class="baseline" x1="${labelW}" x2="${labelW}" y1="0" y2="${H}"/>`;
+    items.forEach((it, i) => {
+      const yy = i * rowH + 4, w = Math.max(1, x(it.value));
+      const dim = opts.active && opts.active !== it.key ? ' class="dim"' : '';
+      const label = it.label.length > 30 ? it.label.slice(0, 29) + '…' : it.label;
+      s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
+        `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--s1)'}"/>` +
+        `<text class="val" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
+        `<rect class="hit${opts.onClick ? ' click' : ''}" data-i="${i}" x="0" y="${yy - 5}" width="${W}" height="${rowH}"/>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title || '')}">${s}</svg>`;
+    bindHits(el, items, opts.tip || (it => `<div class="t">${esc(it.label)}</div>${row('', 'Заказов', fmtN(it.value))}`), opts.onClick);
+  }
+
+  function topN(map, n, otherLabel) {
+    const arr = [...map.entries()].map(([key, v]) => ({ key, label: key, value: v })).sort((a, b) => b.value - a.value);
+    if (arr.length <= n) return arr;
+    const rest = arr.slice(n - 1);
+    return [...arr.slice(0, n - 1), { key: '', label: `${otherLabel} (${rest.length})`, value: rest.reduce((a, x) => a + x.value, 0), other: true }];
+  }
+  const countBy = (list, f) => { const m = new Map(); list.forEach(t => [].concat(f(t)).forEach(k => { if (k) m.set(k, (m.get(k) || 0) + 1); })); return m; };
+
+  function renderProjects() {
+    // проекты — без фильтра по проекту, чтобы видеть выбранный среди остальных
+    const list = tasks.filter(t => inRange(t, st.from, st.to) && (!st.product || t.pkey === st.product));
+    const items = topN(countBy(list, t => t.project), 9, 'Другие').map(it => Object.assign(it, { color: it.other ? 'var(--other)' : 'var(--s1)' }));
+    hbars(document.getElementById('projects'), items, {
+      title: 'Проекты', active: st.project, labelW: 170,
+      onClick: it => { if (it.other) return; st.project = st.project === it.key ? '' : it.key; sync(); render(); },
+    });
+    document.getElementById('projects-t').innerHTML = table(['Проект', 'Заказов'],
+      [...countBy(list, t => t.project).entries()].sort((a, b) => b[1] - a[1]));
+  }
+
+  // --- тепловая карта: день недели × час ------------------------------------------
+  function renderHeat(list) {
+    const el = document.getElementById('heat');
+    const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const m = WD.map(() => new Array(24).fill(0));
+    list.forEach(t => { if (t.startD) m[(t.startD.getDay() + 6) % 7][t.startD.getHours()]++; });
+    const max = Math.max(1, ...m.flat());
+    const W = widthOf(el), L = 26, T = 4, B = 20, cw = (W - L) / 24, ch = Math.min(26, cw * 1.1), H = T + ch * 7 + B;
+    let s = '';
+    const items = [];
+    m.forEach((r, d) => r.forEach((v, h) => {
+      const i = items.push({ d, h, v }) - 1;
+      const op = v ? 0.12 + 0.88 * v / max : 0;
+      s += `<rect x="${L + h * cw + 1}" y="${T + d * ch + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" ` +
+        `fill="${v ? 'var(--seq)' : 'var(--grid)'}" fill-opacity="${v ? op.toFixed(3) : 0.6}"/>` +
+        `<rect class="hit" data-i="${i}" x="${L + h * cw}" y="${T + d * ch}" width="${cw}" height="${ch}"/>`;
+    }));
+    WD.forEach((w, d) => { s += `<text x="${L - 6}" y="${T + d * ch + ch / 2 + 4}" text-anchor="end">${w}</text>`; });
+    for (let h = 0; h < 24; h += 3) s += `<text x="${L + h * cw + cw / 2}" y="${H - 6}" text-anchor="middle">${String(h).padStart(2, '0')}</text>`;
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Регистрации по дню недели и часу">${s}</svg>`;
+    bindHits(el, items, it => `<div class="t">${WD[it.d]}, ${String(it.h).padStart(2, '0')}:00–${String(it.h + 1).padStart(2, '0')}:00</div>${row('', 'Заказов', fmtN(it.v))}`);
+    document.getElementById('heat-t').innerHTML = table(['Час', ...WD], Array.from({ length: 24 }, (_, h) => [String(h).padStart(2, '0') + ':00', ...WD.map((_, d) => m[d][h])]));
+  }
+
+  // --- время выполнения: гистограмма ----------------------------------------------
+  const LEAD_BINS = [[0, 1, 'до 1 ч'], [1, 2, '1–2 ч'], [2, 3, '2–3 ч'], [3, 5, '3–5 ч'], [5, 8, '5–8 ч'], [8, 24, '8–24 ч'], [24, Infinity, 'больше суток']];
+  function renderLead(list) {
+    const el = document.getElementById('lead');
+    const leads = list.filter(t => t.lead != null);
+    const bins = LEAD_BINS.map(([a, b, label]) => {
+      const inBin = leads.filter(t => t.lead >= a && t.lead < b);
+      const sla = inBin.filter(t => t.onTime != null);
+      return { label, value: inBin.length, ok: sla.filter(t => t.onTime).length, sla: sla.length };
+    });
+    if (!leads.length) { el.innerHTML = '<div class="empty">Нет завершённых заказов</div>'; return; }
+    const W = widthOf(el), H = 220, L = 34, R = 8, T = 18, B = 26;
+    const tk = ticks(Math.max(...bins.map(b => b.value))), max = tk.top;
+    const band = (W - L - R) / bins.length, bw = Math.min(24, band * 0.62);
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let s = '';
+    tk.list.forEach((v, k) => {
+      const yy = Math.round(y(v)) + .5;
+      s += `<line class="${k ? 'gridline' : 'baseline'}" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${fmtN(v)}</text>`;
+    });
+    const med = median(leads.map(t => t.lead));
+    bins.forEach((b, i) => {
+      const x = L + band * i + (band - bw) / 2, yy = y(b.value);
+      if (b.value) s += `<path d="${colPath(x, yy, bw, y(0) - yy, 4)}" fill="var(--s1)"/><text class="val" x="${x + bw / 2}" y="${yy - 5}" text-anchor="middle">${fmtN(b.value)}</text>`;
+      s += `<text x="${L + band * i + band / 2}" y="${H - 8}" text-anchor="middle">${b.label}</text>` +
+        `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Время выполнения">${s}</svg>` +
+      `<div class="cap" style="margin:4px 0 0">Медиана — ${fmtH(med)}; завершённых — ${fmtN(leads.length)}.</div>`;
+    bindHits(el, bins, b => `<div class="t">${b.label}</div>${row('', 'Заказов', fmtN(b.value))}${row('', 'Из них в срок', b.sla ? fmtPct(b.ok / b.sla) : '—')}`);
+    document.getElementById('lead-t').innerHTML = table(['Время', 'Заказов', 'В срок'], bins.map(b => [b.label, b.value, b.sla ? fmtPct(b.ok / b.sla) : '—']));
+  }
+
+  // --- соблюдение срока: 100% по видам продукции ------------------------------------
+  function renderSla(list) {
+    const el = document.getElementById('sla');
+    const rows = PRODUCTS.map(p => {
+      const s = list.filter(t => t.pkey === p.key && t.onTime != null);
+      return { p, ok: s.filter(t => t.onTime).length, bad: s.filter(t => !t.onTime).length };
+    }).filter(r => r.ok + r.bad);
+    if (!rows.length) { el.innerHTML = '<div class="empty">Нет завершённых заказов с крайним сроком</div>'; return; }
+    const W = widthOf(el), rowH = 34, bh = 18, labelW = Math.min(170, W * 0.4), valW = 8, H = rows.length * rowH;
+    const bw = W - labelW - valW;
+    let s = '';
+    rows.forEach((r, i) => {
+      const n = r.ok + r.bad, yy = i * rowH + 6, wOk = bw * r.ok / n, gap = r.ok && r.bad ? 2 : 0;
+      s += `<text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(r.p.label)}</text>`;
+      if (r.ok) s += r.bad ? `<rect x="${labelW}" y="${yy}" width="${wOk}" height="${bh}" fill="var(--good)"/>` : `<path d="${barPath(labelW, yy, wOk, bh, 4)}" fill="var(--good)"/>`;
+      if (r.bad) s += `<path d="${barPath(labelW + wOk + gap, yy, bw - wOk - gap, bh, 4)}" fill="var(--critical)"/>`;
+      const pct = Math.round(100 * r.ok / n);
+      if (wOk > 64) s += `<text x="${labelW + 8}" y="${yy + bh / 2 + 4}" style="fill:#fff;font-weight:600">✓ ${pct}%</text>`;
+      s += `<rect class="hit" data-i="${i}" x="0" y="${yy - 6}" width="${W}" height="${rowH}"/>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Соблюдение срока по видам продукции">${s}</svg>`;
+    bindHits(el, rows, r => `<div class="t">${esc(r.p.label)}</div>${row('var(--good)', '✓ В срок', `${fmtN(r.ok)} · ${fmtPct(r.ok / (r.ok + r.bad))}`)}${row('var(--critical)', '! С нарушением', `${fmtN(r.bad)} · ${fmtPct(r.bad / (r.ok + r.bad))}`)}`);
+    document.getElementById('sla-t').innerHTML = table(['Вид продукции', 'В срок', 'С нарушением', 'Доля в срок'],
+      rows.map(r => [r.p.label, r.ok, r.bad, fmtPct(r.ok / (r.ok + r.bad))]));
+  }
+
+  // --- запас и опоздание относительно крайнего срока ----------------------------------
+  // интервалы по модулю разницы, часы; слева направо, как на оси времени: большой запас … срок … сильное опоздание
+  const MARGIN_BINS = [[0, 0.25, 'до 15 мин'], [0.25, 0.5, '15–30 мин'], [0.5, 1, '30 мин–1 ч'], [1, 2, '1–2 ч'],
+                       [2, 4, '2–4 ч'], [4, 8, '4–8 ч'], [8, 24, '8–24 ч'], [24, Infinity, 'больше суток']];
+  const marginOf = t => (t.onTime != null ? (t.deadlineD - t.finishD) / HOUR : null);   // > 0 — раньше срока
+  function renderMargin(list) {
+    const el = document.getElementById('margin');
+    const ms = list.map(marginOf).filter(v => v != null);
+    const early = ms.filter(v => v >= 0), late = ms.filter(v => v < 0).map(v => -v);
+    const q = (a, k) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * k))]; };
+    document.getElementById('margin-kpis').innerHTML = [
+      `<div class="kpi"><div class="label">Раньше срока</div><div class="value">${fmtN(early.length)}</div><div class="delta">${fmtPct(ms.length ? early.length / ms.length : null)} заказов с крайним сроком</div></div>`,
+      `<div class="kpi"><div class="label">Запас, медиана</div><div class="value">${fmtH(median(early))}</div><div class="delta">у 90% — меньше ${fmtH(q(early, 0.9))}</div></div>`,
+      `<div class="kpi"><div class="label">Позже срока</div><div class="value">${fmtN(late.length)}</div><div class="delta">${fmtPct(ms.length ? late.length / ms.length : null)} заказов с крайним сроком</div></div>`,
+      `<div class="kpi"><div class="label">Опоздание, медиана</div><div class="value">${fmtH(median(late))}</div><div class="delta">у 10% — больше ${fmtH(q(late, 0.9))}, максимум ${fmtH(late.length ? Math.max(...late) : null)}</div></div>`,
+    ].join('');
+    if (!ms.length) { el.innerHTML = '<div class="empty">Нет завершённых заказов с крайним сроком</div>'; document.getElementById('margin-t').innerHTML = ''; return; }
+    const nb = MARGIN_BINS.length;
+    const cols = [
+      ...MARGIN_BINS.map(([a, b, label], i) => ({ side: 'early', i, label, value: early.filter(v => v >= a && v < b).length })).reverse(),
+      ...MARGIN_BINS.map(([a, b, label], i) => ({ side: 'late', i, label, value: late.filter(v => v > a && v <= b).length })),
+    ];
+    const W = widthOf(el), H = 230, L = 34, R = 8, T = 18, B = 40;
+    const tk = ticks(Math.max(...cols.map(c => c.value))), max = tk.top;
+    const band = (W - L - R) / cols.length, bw = Math.min(24, band * 0.7);
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let s = '';
+    tk.list.forEach((v, k) => {
+      const yy = Math.round(y(v)) + .5;
+      s += `<line class="${k ? 'gridline' : 'baseline'}" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${fmtN(v)}</text>`;
+    });
+    const mid = L + band * nb;
+    s += `<line x1="${mid}" x2="${mid}" y1="${T - 8}" y2="${H - B}" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="0"/>` +
+      `<text class="lbl" x="${mid}" y="${T - 10}" text-anchor="middle">крайний срок</text>`;
+    cols.forEach((c, k) => {
+      const x = L + band * k + (band - bw) / 2, yy = y(c.value);
+      const op = (0.4 + 0.6 * c.i / (nb - 1)).toFixed(2);      // дальше от срока — насыщеннее
+      if (c.value) s += `<path d="${colPath(x, yy, bw, y(0) - yy, 4)}" fill="var(--${c.side})" fill-opacity="${op}"/>` +
+        (band > 26 ? `<text class="val" x="${x + bw / 2}" y="${yy - 5}" text-anchor="middle">${fmtN(c.value)}</text>` : '');
+      const lx = L + band * k + band / 2;
+      s += `<text x="${lx}" y="${H - B + 14}" text-anchor="end" transform="rotate(-35 ${lx} ${H - B + 14})">${c.label}</text>` +
+        `<rect class="hit" data-i="${k}" x="${L + band * k}" y="${T}" width="${band}" height="${H - T - B}"/>`;
+    });
+    el.innerHTML = `<svg width="${W}" height="${H + 18}" role="img" aria-label="Запас и опоздание относительно крайнего срока">${s}</svg>`;
+    bindHits(el, cols, c => `<div class="t">${c.side === 'early' ? 'Раньше срока' : 'Позже срока'}: ${c.label}</div>` +
+      row(`var(--${c.side})`, 'Заказов', fmtN(c.value)) + row('', 'Доля', fmtPct(c.value / ms.length)));
+    // по видам продукции
+    document.getElementById('margin-t').innerHTML = table(['Вид продукции', 'Раньше срока', 'Запас, медиана', 'Позже срока', 'Опоздание, медиана', 'Опоздание, максимум'],
+      PRODUCTS.map(p => {
+        const m = list.filter(t => t.pkey === p.key).map(marginOf).filter(v => v != null);
+        const e = m.filter(v => v >= 0), l = m.filter(v => v < 0).map(v => -v);
+        return m.length ? [p.label, e.length, fmtH(median(e)), l.length, fmtH(median(l)), fmtH(l.length ? Math.max(...l) : null)] : null;
+      }).filter(Boolean));
+  }
+
+  function renderExecs(list) {
+    // каждый, кто есть в «Выполнении задачи», — один раз на заказ
+    const groups = new Map();
+    list.forEach(t => t.workers.forEach(w => { if (!groups.has(w)) groups.set(w, []); groups.get(w).push(t); }));
+    const all = [...groups.entries()].map(([k, ts]) => {
+      const sla = ts.filter(t => t.onTime != null);
+      return { key: k, label: k, value: ts.length, med: median(ts.map(t => t.lead).filter(v => v != null)), ok: sla.length ? sla.filter(t => t.onTime).length / sla.length : null };
+    }).sort((a, b) => b.value - a.value);
+    const items = all.slice(0, 12);
+    hbars(document.getElementById('execs'), items, {
+      title: 'Исполнители', labelW: 140,
+      tip: it => `<div class="t">${esc(it.label)}</div>${row('', 'Заказов', fmtN(it.value))}${row('', 'Медиана выполнения', fmtH(it.med))}${row('', 'В срок', fmtPct(it.ok))}`,
+    });
+    document.getElementById('execs-t').innerHTML = table(['Исполнитель', 'Заказов с участием', 'Медиана', 'В срок'], all.map(it => [it.label, it.value, fmtH(it.med), fmtPct(it.ok)]));
+  }
+
+  function renderGeo(list) {
+    const an = list.filter(t => t.themes != null);
+    const conflict = an.filter(t => t.conflict).length;
+    document.getElementById('geo-cap').textContent = an.length
+      ? `По заказам с анализом LLM: ${fmtN(an.length)} из ${fmtN(list.length)} за период; связаны с конфликтом — ${fmtPct(conflict / an.length)}.`
+      : `За период нет заказов с анализом LLM (анализ включён недавно).`;
+    // топ без столбика «Другие»: длинный хвост сжал бы шкалу; остальное — в таблице
+    const top = (m, n) => [...m.entries()].map(([key, v]) => ({ key, label: key, value: v })).sort((x, y) => y.value - x.value).slice(0, n);
+    const themeMap = countBy(an, t => t.themes), regionMap = countBy(an, t => [...new Set(t.macros)]);
+    const themes = top(themeMap, 8), regions = top(regionMap, 8);
+    const more = (m, n, forms) => m.size > n ? `<div class="cap" style="margin:2px 0 0">ещё ${m.size - n} ${plural(m.size - n, forms)} — в таблице</div>` : '';
+    const elT = document.getElementById('themes'), elR = document.getElementById('regions');
+    const tT = document.getElementById('themes-t'), tR = document.getElementById('regions-t');
+    if (!an.length) { elT.innerHTML = elR.innerHTML = tT.innerHTML = tR.innerHTML = ''; return; }
+    hbars(elT, themes, { title: 'Темы', labelW: 170, tip: it => `<div class="t">Тема: ${esc(it.label)}</div>${row('', 'Заказов', fmtN(it.value))}` });
+    hbars(elR, regions, { title: 'Регионы', labelW: 170, tip: it => `<div class="t">Регион: ${esc(it.label)}</div>${row('', 'Заказов', fmtN(it.value))}` });
+    elT.insertAdjacentHTML('afterbegin', '<div class="cap" style="margin:0 0 4px;font-weight:600;color:var(--ink)">Темы</div>');
+    elR.insertAdjacentHTML('afterbegin', '<div class="cap" style="margin:0 0 4px;font-weight:600;color:var(--ink)">Регионы (по координатам топонима)</div>');
+    elT.insertAdjacentHTML('beforeend', more(themeMap, 8, ['тема', 'темы', 'тем']));
+    elR.insertAdjacentHTML('beforeend', more(regionMap, 8, ['регион', 'региона', 'регионов']));
+    tT.innerHTML = table(['Тема', 'Заказов'], [...themeMap.entries()].sort((a, b) => b[1] - a[1]));
+    tR.innerHTML = table(['Регион', 'Заказов'], [...regionMap.entries()].sort((a, b) => b[1] - a[1]));
+  }
+
+  // --- фильтры --------------------------------------------------------------
+  const el = { from: document.getElementById('from'), to: document.getElementById('to'),
+               project: document.getElementById('project'), product: document.getElementById('product') };
+  el.from.min = el.to.min = firstDay; el.from.max = el.to.max = lastDay;
+  el.project.innerHTML = '<option value="">Все</option>' +
+    [...countBy(tasks, t => t.project).entries()].sort((a, b) => b[1] - a[1]).map(([p, n]) => `<option value="${esc(p)}">${esc(p)} · ${n}</option>`).join('');
+  el.product.innerHTML = '<option value="">Все</option>' + PRODUCTS.map(p => `<option value="${p.key}">${p.label}</option>`).join('');
+
+  function sync() {
+    if (st.from < firstDay) st.from = firstDay;
+    if (st.to > lastDay) st.to = lastDay;
+    if (st.from > st.to) st.from = st.to;
+    el.from.value = st.from; el.to.value = st.to; el.project.value = st.project; el.product.value = st.product;
+    const days = span(st.from, st.to);
+    document.querySelectorAll('#presets button').forEach(b => {
+      const d = +b.dataset.days;
+      b.setAttribute('aria-pressed', String(st.to === lastDay && (d ? days === d : st.from === firstDay)));
+    });
+    save();
+  }
+  document.querySelectorAll('#presets button').forEach(b => b.addEventListener('click', () => {
+    const d = +b.dataset.days; st.to = lastDay; st.from = d ? addDays(lastDay, 1 - d) : firstDay; sync(); render();
+  }));
+  el.from.addEventListener('change', () => { if (el.from.value) { st.from = el.from.value; sync(); render(); } });
+  el.to.addEventListener('change', () => { if (el.to.value) { st.to = el.to.value; sync(); render(); } });
+  el.project.addEventListener('change', () => { st.project = el.project.value; sync(); render(); });
+  el.product.addEventListener('change', () => { st.product = el.product.value; sync(); render(); });
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.assign(st, { from: addDays(lastDay, -13), to: lastDay, project: '', product: '' }); sync(); render();
+  });
+  document.getElementById('theme').addEventListener('click', () => {
+    const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    r.dataset.theme = dark ? 'light' : 'dark';
+  });
+
+  function render() {
+    const list = filtered();
+    const seen = tasks.map(t => t.seen).filter(Boolean).sort().pop();
+    document.getElementById('sub').textContent =
+      `${dmy(st.from)} — ${dmy(st.to)}` + (st.project ? ` · ${st.project}` : '') +
+      (st.product ? ` · ${PRODUCTS.find(p => p.key === st.product).label}` : '') +
+      ` · архив ${dmy(firstDay)}–${dmy(lastDay)}` + (seen ? `, статусы сверены ${seen.slice(8, 10)}.${seen.slice(5, 7)} ${seen.slice(11, 16)}` : '');
+    renderKpis(list); renderDays(list); renderProjects(); renderHeat(list); renderLead(list);
+    renderSla(list); renderExecs(list); renderMargin(list); renderGeo(list);
+  }
+  let rt;
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+  sync();
+  render();
+})();
+</script>
+</body>
+</html>
