@@ -32,6 +32,7 @@ BASEMAP_PATH = HERE.parent.parent / "data" / "basemap.json"
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 MAX_TEXT = 4000
 MAX_ATTEMPTS = 3          # попыток анализа одной задачи            # символов описания в LLM
+DAY_START_HOUR = 4         # сутки с 04:00, как ось ленты (collect.py: day_start_hour)
 BATCH_SIZE = 8             # задач в одном запросе
 KEEP_DAYS = 7              # сколько помнить задачи, пропавшие из выборки
 NOMINATIM_PAUSE = 1.1      # правило Nominatim: не чаще 1 запроса в секунду
@@ -261,7 +262,8 @@ def norm(s: str) -> str:
 class GeoCache:
     """
     Кэш геокодирования {название: [lat, lon] | null}, совместим с geocode_tasks.py.
-    Найденное Nominatim хранится как [lat, lon, "nominatim"] — чтобы было видно, откуда точка.
+    Найденное Nominatim хранится как [lat, lon, "nominatim", рабочий день запроса] — чтобы было видно, откуда точка
+    и когда её спросили (точки массового геокодирования — без пометок, это тоже Nominatim).
     """
 
     def __init__(self, path: Path):
@@ -297,6 +299,11 @@ class GeoCache:
                 n += 1
         self.save()
         return n
+
+
+def biz_today() -> str:
+    """Рабочий день (сутки с 04:00) сейчас, ГГГГ-ММ-ДД."""
+    return (datetime.now() - timedelta(hours=DAY_START_HOUR)).date().isoformat()
 
 
 def km(a, b) -> float:
@@ -375,8 +382,11 @@ def analyze(tasks: list[dict], cfg: dict, region_list: bool | None = None, cache
 # ---------------------------------------------------------------------------
 
 class Geocoder:
-    def __init__(self, cache: GeoCache):
+    def __init__(self, cache: GeoCache, fresh_since: str | None = None):
+        """fresh_since — первый рабочий день живого окна (ГГГГ-ММ-ДД): точка, запрошенная у Nominatim начиная
+        с него, подписывается «nominatim» до выпадения её дня из окна; всё более раннее — «cache»."""
         self.cache = cache
+        self.fresh_since = fresh_since
         self._nom = None
         self._last = 0.0
         self.countries = {c["iso"] for c in _load_json(BASEMAP_PATH, {}).get("countries", [])}
@@ -418,13 +428,15 @@ class Geocoder:
         macro = (t.get("region") or (t.get("macro") or "").split(",")[0]).strip()
         keys = [f"{name} ({macro})", name] if macro else [name]
 
-        # источник — откуда точка взята в этот раз: «cache» — уже была (прошлые запросы сборщика или массовое
-        # геокодирование, тоже Nominatim), «nominatim» — запрос ушёл в этом запуске
+        # источник: «nominatim» — запрос ушёл в пределах живого окна (подпись держится, пока день в окне;
+        # при выпадении архив меняет её на «cache» — archive.settle_sources); «cache» — точка была раньше
+        # (прошлые запросы сборщика или массовое геокодирование, тоже Nominatim)
         for k in keys:                                   # 1. кэш
             found, c = self.cache.get(k)
             if found and c and ok(c[:2]):
                 self.hits += 1
-                return self._point(name, kind, c[:2], "cache")
+                fresh = len(c) > 3 and c[2] == "nominatim" and self.fresh_since and c[3] >= self.fresh_since
+                return self._point(name, kind, c[:2], "nominatim" if fresh else "cache")
         query = (t.get("query") or "").strip()
         asked = False
         if query:                                        # 2. Nominatim (ответ, даже пустой, кэшируется)
@@ -438,7 +450,7 @@ class Geocoder:
                 cands = sorted(cands, key=lambda c: km(c, est))
             c = cands[0] if cands else None
             if ok(c):
-                self.cache.put(keys[0], c + ["nominatim"])
+                self.cache.put(keys[0], c + ["nominatim", biz_today()] if asked else c + ["nominatim"])
                 if not asked:
                     self.hits += 1                       # ответ на этот запрос уже был в кэше
                 return self._point(name, kind, c, "nominatim" if asked else "cache")
@@ -569,7 +581,11 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
                     log.warning("Задача %s: анализ не удался %s раз — больше не пробуем", t["id"], n)
 
     cache = GeoCache(app_dir / "geocache.json")
-    coder = Geocoder(cache)
+    try:                                # первый рабочий день окна: res["range"]["from"] — 04:00 этого дня
+        since = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M").date().isoformat()
+    except (KeyError, ValueError):
+        since = None
+    coder = Geocoder(cache, since)
     items = []
     waiting = 0                         # задачи окна без анализа, которые ещё будут разобраны
     today = datetime.now().date().isoformat()

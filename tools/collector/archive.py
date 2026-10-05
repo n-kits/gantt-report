@@ -230,9 +230,19 @@ def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, recor
     return path
 
 
+def settle_sources(db: sqlite3.Connection, first_open: str) -> int:
+    """Дни вне живого окна: источник точек «nominatim» → «cache». «nominatim» держится, пока день в окне
+    (запрос к геокодеру был в эти три дня, geo.Geocoder); в архиве и Excel закрытых дней — уже кэш."""
+    n = db.execute("""UPDATE toponyms SET src = 'cache' WHERE src = 'nominatim'
+                      AND task_id IN (SELECT id FROM tasks WHERE day < ?)""", (first_open,)).rowcount
+    db.commit()
+    return n
+
+
 def export_closed(db: sqlite3.Connection, cfg: dict, window_from: datetime, out_dir: Path) -> list[Path]:
     """Выгрузить дни, целиком выпавшие из окна и ещё не выгруженные."""
     first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
+    settle_sources(db, first_open)
     days = [d for (d,) in db.execute(
         "SELECT DISTINCT day FROM tasks WHERE day < ? AND day NOT IN (SELECT day FROM exports) ORDER BY day",
         (first_open,))]
@@ -242,6 +252,7 @@ def export_closed(db: sqlite3.Connection, cfg: dict, window_from: datetime, out_
 def reexport(db: sqlite3.Connection, cfg: dict, days: list[str], window_from: datetime, out_dir: Path) -> list[Path]:
     """Перечитанные из Bitrix закрытые дни — выгрузить заново (в Excel — текущие статусы)."""
     first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
+    settle_sources(db, first_open)
     return [p for p in (export_day(db, cfg, d, out_dir) for d in sorted(set(days)) if d < first_open) if p]
 
 
