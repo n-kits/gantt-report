@@ -43,21 +43,34 @@
         .map(([sk, sl]) => ({ name: sk, children: sl.map(l => ({ name: l.label, leaf: l })) })) };
     }) };
 
+    const rootNode = d3.hierarchy(tree);
+    // сколько «шагов» по окружности: соседи в одной группе — 1, на стыке групп — 2 (как separation ниже), плюс замыкание круга
+    const lv = rootNode.leaves();
+    let units = 2;
+    for (let i = 1; i < lv.length; i++) units += lv[i].parent === lv[i - 1].parent ? 1 : 2;
     const longest = d3.max(g.leaves, l => Math.min(28, l.label.length)) || 10;
-    const font = n <= 60 ? 13 : 11;                    // мало узлов — подписи крупнее
-    const labelR = 22 + longest * font * 0.58;
-    // мало узлов — фигура компактнее, чтобы не растягивать раздел на несколько экранов
-    // fitScreen — фигура во всю полезную площадь: по ширине карточки, но целиком в высоту окна под панелью фильтров
+    const labelOf = f => 22 + longest * f * 0.58;
+    // размер, при котором подписи не наезжают друг на друга: шаг по дуге — 0,95 кегля
+    // (у строчных букв высота меньше кегля, так что зазор остаётся и при шаге чуть меньше кегля)
+    const need = f => 2 * (units * f * 0.95 / (2 * Math.PI) + labelOf(f) + 10);
+    const avail = el.clientWidth || 800;
+    let font = n <= 60 ? 13 : 11;                      // мало узлов — подписи крупнее
     let size;
     if (opts.fitScreen) {
+      // базовый размер — середина между «целиком в высоту окна» и «во всю ширину карточки»;
+      // подписям тесно — фигура растёт до ширины карточки, затем шрифт 10px, и только потом шире карточки
+      // (тогда график прокручивается вбок внутри карточки)
       const bar = document.querySelector('.an-bar');
       const top = bar && getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0;
-      size = Math.max(560, Math.min(el.clientWidth || 800, innerHeight - top - 16));
+      const fit = Math.min(avail, innerHeight - top - 16);
+      if (need(font) > avail) font = 10;
+      size = Math.max(560, Math.round((fit + avail) / 2), need(font));
     } else {
-      size = Math.max(560, Math.min(n <= 40 ? 760 : 1100, el.clientWidth || 800));
+      // мало узлов — фигура компактнее, чтобы не растягивать раздел на несколько экранов
+      size = Math.max(560, Math.min(n <= 40 ? 760 : 1100, avail), need(font));
     }
+    const labelR = labelOf(font);
     const radius = size / 2 - labelR;
-    const rootNode = d3.hierarchy(tree);
     d3.cluster().size([2 * Math.PI, radius]).separation((a, b) => a.parent === b.parent ? 1 : 2)(rootNode);
     const byId = new Map(rootNode.leaves().map(d => [d.data.leaf.id, d]));
     const line = d3.lineRadial().curve(d3.curveBundle.beta(opts.beta)).radius(d => d.y).angle(d => d.x);
@@ -66,7 +79,7 @@
 
     // фигура масштабируется по ширине карточки (viewBox), подписи — в единицах фигуры
     const svg = d3.create('svg').attr('viewBox', [-size / 2, -size / 2, size, size]).attr('class', 'an-bundle')
-      .style('font-size', font + 'px').style('max-width', size + 'px').attr('role', 'img').attr('aria-label', opts.title || '');
+      .style('font-size', font + 'px').style('max-width', size + 'px').style('min-width', size > avail ? size + 'px' : null).attr('role', 'img').attr('aria-label', opts.title || '');
     const arc = d3.arc().innerRadius(radius + 3).outerRadius(radius + 6);
     for (const grp of rootNode.children) {
       const ls = grp.leaves(), a0 = d3.min(ls, d => d.x) - 0.012, a1 = d3.max(ls, d => d.x) + 0.012;

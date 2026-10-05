@@ -147,6 +147,9 @@
       ensureD3().then(graphs, e => { $('people-graph').innerHTML = $('places-graph').innerHTML = `<div class="an-empty">${esc(e.message)}</div>`; });
       return;
     }
+    // высота общей панели фильтров — для липкой панели графа мест (на телефоне общая панель не липнет)
+    const bar = document.querySelector('.an-bar');
+    bar.parentElement.style.setProperty('--an-top', (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) + 'px');
     $('beta').value = st.beta; $('beta-v').textContent = st.beta.toFixed(2);
     $('beta-places').value = st.betaPlaces; $('beta-places-v').textContent = st.betaPlaces.toFixed(2);
     const list = filtered();

@@ -167,7 +167,11 @@
 .an svg g.dim { opacity: .3; }
 
 /* граф связей */
-.an-graph { display: flex; justify-content: center; }
+.an-graph { overflow-x: auto; }
+.an-graph svg { display: block; margin: 0 auto; }
+/* своя липкая панель графа — под общей панелью фильтров (--an-top ставит app.js), пока карточка на экране */
+.an-stick { position: sticky; top: var(--an-top, 0); z-index: 4; background: var(--an-surface);
+            margin: 0 -16px; padding: 6px 16px 2px; border-bottom: 1px solid var(--an-ring); }
 .an svg.an-bundle { width: 100%; height: auto; overflow: visible; }
 .an svg.an-bundle text { font-size: inherit; fill: var(--an-ink-2); }
 .an svg.an-bundle text.on { fill: var(--an-ink); font-weight: 700; }
