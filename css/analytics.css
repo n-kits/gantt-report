@@ -35,6 +35,7 @@
   --an-critical-ink: #B42318;
   --an-early: #2A78D6;
   --an-late: #E34948;
+  --an-median: #EDA100;      /* «штрихи»: медиана строки */
   --an-link: #52514E;
   --an-hl: #C45C26;
   color: var(--an-ink); font-size: 14px; flex: 1;
@@ -106,7 +107,7 @@
 .an-arrow:disabled { opacity: .35; cursor: default; }
 .an-pin { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 12px;
           background: rgba(196, 92, 38, .12); color: var(--an-ink); font-size: 12.5px; }
-.an-pin[hidden] { display: none; }
+.an-pin[hidden], .an-seg[hidden], .an-legend[hidden] { display: none; }
 
 /* цифры */
 .an .kpis { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 16px; align-items: end; }

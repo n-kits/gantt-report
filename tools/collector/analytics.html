@@ -104,12 +104,29 @@
         </section>
         <section class="an-card w12">
           <h3>Насколько раньше и позже крайнего срока</h3>
-          <p class="an-cap">Разница между сроком и фактическим завершением. Как на оси времени: слева — раньше срока, справа — позже;
-            чем дальше от срока, тем насыщеннее цвет.</p>
+          <p class="an-cap">Разница между сроком и фактическим завершением. Как на оси времени: слева — раньше срока, справа — позже.</p>
           <div class="kpis two-kpi" id="an-margin-kpis"></div>
-          <div class="an-legend">
+          <div class="an-tools">
+            <div class="an-seg" id="an-margin-view" role="group" aria-label="Вид">
+              <button type="button" data-v="bars">Столбики</button>
+              <button type="button" data-v="ticks">Штрихи</button>
+            </div>
+            <div class="an-seg" id="an-margin-rows" role="group" aria-label="Строки" hidden>
+              <button type="button" data-r="project">Проекты</button>
+              <button type="button" data-r="worker">Исполнители</button>
+              <button type="button" data-r="day">Дни</button>
+            </div>
+          </div>
+          <div class="an-legend" id="an-margin-legend-bars">
             <span><span class="sw" style="background:var(--an-early)"></span>раньше срока</span>
             <span><span class="sw" style="background:var(--an-late)"></span>позже срока</span>
+            <span>чем дальше от срока, тем насыщеннее цвет</span>
+          </div>
+          <div class="an-legend" id="an-margin-legend-ticks" hidden>
+            <span><span class="sw" style="background:var(--an-ink);opacity:.45;width:2px"></span>заказ</span>
+            <span><span class="sw" style="background:var(--an-critical);width:2px"></span>крайний срок</span>
+            <span><span class="sw" style="background:var(--an-median);width:4px"></span>медиана строки</span>
+            <span>шкала ±12 ч, дальше — числом у края; исполнители — только одиночные заказы; строки — по медиане</span>
           </div>
           <div class="an-chart" id="an-margin"></div>
           <details class="tbl"><summary>Таблица по видам продукции</summary><div class="scroll" id="an-margin-t"></div></details>

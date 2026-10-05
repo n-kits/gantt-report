@@ -270,6 +270,7 @@
       `<div class="kpi"><div class="label">Опоздание, медиана</div><div class="value">${fmtH(median(late))}</div><div class="delta">у 10% — больше ${fmtH(q(late, 0.9))}, максимум ${fmtH(late.length ? Math.max(...late) : null)}</div></div>`,
     ].join('');
     if (!ms.length) { el.innerHTML = '<div class="an-empty">Нет завершённых заказов с крайним сроком</div>'; ctx.$('margin-t').innerHTML = ''; return; }
+    if (ctx.st.marginView === 'ticks') { strips(ctx, el, list); marginTable(ctx, list); return; }
     const nb = MARGIN_BINS.length;
     const cols = [
       ...MARGIN_BINS.map(([a, b, label], i) => ({ side: 'early', i, label, value: early.filter(v => v >= a && v < b).length })).reverse(),
@@ -295,6 +296,10 @@
     el.innerHTML = `<svg width="${W}" height="${H + 18}" role="img" aria-label="Запас и опоздание относительно крайнего срока">${s}</svg>`;
     bindHits(el, cols, c => `<div class="t">${c.side === 'early' ? 'Раньше срока' : 'Позже срока'}: ${c.label}</div>` +
       row(`var(--an-${c.side})`, 'Заказов', fmtN(c.value)) + row('', 'Доля', fmtPct(c.value / ms.length)));
+    marginTable(ctx, list);
+  }
+
+  function marginTable(ctx, list) {
     ctx.$('margin-t').innerHTML = table(['Вид продукции', 'Раньше срока', 'Запас, медиана', 'Позже срока', 'Опоздание, медиана', 'Опоздание, максимум'],
       PRODUCTS.map(p => {
         const m = list.filter(t => t.pkey === p.key).map(marginOf).filter(v => v != null);
@@ -302,6 +307,66 @@
         return m.length ? [p.label, e.length, fmtH(median(e)), l.length, fmtH(median(l)), fmtH(l.length ? Math.max(...l) : null)] : null;
       }).filter(Boolean));
   }
+
+  // «Штрихи» (Observable Plot): каждый заказ — черта на оси «часы относительно срока», красная вертикаль — крайний срок,
+  // жёлтая черта — медиана строки. Строки — проекты, исполнители (только одиночные заказы) или дни.
+  // Шкала обрезана: ±STRIP_H часов; заказы дальше прижаты к краю, их число — подписью у края.
+  const STRIP_H = 12;
+  const ROWS = {
+    project: { label: 'Проект', of: t => [t.project], sort: true },
+    worker: { label: 'Исполнитель', of: t => t.workers.length === 1 ? t.workers : [], sort: true },
+    day: { label: 'День', of: t => [dm(t.day)], sort: false },
+  };
+  function strips(ctx, el, list) {
+    const Plot = root.Plot;
+    if (!Plot) { el.innerHTML = '<div class="an-empty">Загрузка Observable Plot…</div>'; ctx.loadPlot().then(() => margin(ctx), e => { el.innerHTML = `<div class="an-empty">${esc(e.message)}</div>`; }); return; }
+    const R = ROWS[ctx.st.marginRows] || ROWS.project;
+    const data = [];
+    list.forEach(t => {
+      const m = marginOf(t);
+      if (m == null) return;
+      const h = -m;                                      // > 0 — позже срока (справа)
+      R.of(t).forEach(row => data.push({ row, h, x: Math.max(-STRIP_H, Math.min(STRIP_H, h)), id: t.id, day: t.day }));
+    });
+    if (!data.length) { el.innerHTML = '<div class="an-empty">Нет заказов для этих строк</div>'; return; }
+    const byRow = d3group(data, d => d.row);
+    const rows = [...byRow.entries()].map(([row, ds]) => ({ row, n: ds.length, med: median(ds.map(d => d.h)),
+      lo: ds.filter(d => d.h < -STRIP_H).length, hi: ds.filter(d => d.h > STRIP_H).length }));
+    if (R.sort) rows.sort((a, b) => a.med - b.med); else rows.sort((a, b) => byRow.get(a.row)[0].day < byRow.get(b.row)[0].day ? -1 : 1);
+    const order = rows.map(r => r.row);
+    const fmtSigned = h => h === 0 ? 'в срок' : (h < 0 ? 'раньше на ' : 'позже на ') + fmtH(Math.abs(h));
+    const W = widthOf(el);
+    // подписи по оси: каждый час, а если места хватает (≥ 56px на час) — и каждые полчаса; деления — всегда через полчаса
+    const ml = Math.min(170, W * 0.3), perHour = (W - ml - 8) / (2 * STRIP_H + 2.8);
+    const hours = d3range(-STRIP_H, STRIP_H, 1), halves = d3range(-STRIP_H, STRIP_H, 0.5);
+    const labelStep = perHour >= 56 ? 0.5 : perHour >= 22 ? 1 : 2;
+    const fmtTick = h => h === 0 ? '0' : (h > 0 ? '+' : '−') + String(Math.abs(h)).replace('.', ',');
+    const chart = Plot.plot({
+      width: W, height: 34 + order.length * 22, marginLeft: ml, marginRight: 8, marginTop: 6,
+      style: { fontFamily: 'inherit', fontSize: '12px', color: 'var(--an-ink-2)', background: 'transparent' },
+      x: { domain: [-STRIP_H - 1.4, STRIP_H + 1.4] },
+      y: { domain: order, label: null, tickFormat: r => String(r).length > 26 ? String(r).slice(0, 25) + '…' : r },
+      marks: [
+        Plot.gridX(hours, { stroke: 'var(--an-grid)', strokeOpacity: 1 }),
+        Plot.axisX(halves, { tickFormat: () => '', tickSize: 3, label: null }),
+        Plot.axisX(d3range(-STRIP_H, STRIP_H, labelStep), { tickFormat: fmtTick, tickSize: 6,
+          label: '← раньше срока · часы · позже срока →', labelAnchor: 'center' }),
+        Plot.tickX(data, { x: 'x', y: 'row', stroke: 'var(--an-ink)', strokeOpacity: 0.35,
+          title: d => `${d.row}
+${fmtSigned(d.h)}` }),
+        Plot.ruleX([0], { stroke: 'var(--an-critical)', strokeWidth: 2 }),
+        Plot.tickX(rows, { x: r => Math.max(-STRIP_H, Math.min(STRIP_H, r.med)), y: 'row', stroke: 'var(--an-median)', strokeWidth: 4,
+          title: r => `${r.row}
+медиана: ${fmtSigned(r.med)}
+заказов: ${r.n}` }),
+        Plot.text(rows.filter(r => r.hi), { x: STRIP_H + 0.4, y: 'row', text: r => '+' + r.hi, textAnchor: 'start', fill: 'var(--an-late)', fontWeight: 700 }),
+        Plot.text(rows.filter(r => r.lo), { x: -STRIP_H - 0.4, y: 'row', text: r => '+' + r.lo, textAnchor: 'end', fill: 'var(--an-early)', fontWeight: 700 }),
+      ],
+    });
+    el.replaceChildren(chart);
+  }
+  const d3range = (a, b, step) => { const r = []; for (let x = a; x <= b + 1e-9; x += step) r.push(x); return r; };
+  const d3group = (a, f) => { const m = new Map(); a.forEach(x => { const k = f(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; };
 
   // === Люди =================================================================
   // каждый, кто есть в «Выполнении задачи», — один раз на заказ; клик — подсветить в графе связей.

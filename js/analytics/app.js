@@ -13,13 +13,14 @@
   const { fmtN, dmy, dmhm, esc, addDays, span } = A.util;
   const KEY = 'gantt-analytics.v1';
   const D3_URL = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+  const PLOT_URL = 'https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6.17/dist/plot.umd.min.js';   // нужен d3
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { days: 14, project: '', product: '', person: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null };
+  const DEFAULTS = { days: 14, project: '', product: '', person: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project' };
 
   const $ = id => document.getElementById('an-' + id);
-  let M = null, st = null, visible = false, dirty = false, d3wait = null, mounted = false;
+  let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, mounted = false;
 
   // --- состояние ------------------------------------------------------------
   function load() {
@@ -99,6 +100,9 @@
     $('win-next').addEventListener('click', () => shift(1));
     $('win-end').addEventListener('change', e => { if (e.target.value) { st.winEnd = e.target.value; save(); graphs(); } });
     $('person-clear').addEventListener('click', () => update({ person: '' }));
+    // «Насколько раньше и позже»: вид и строки «штрихов»
+    document.querySelectorAll('#an-margin-view button').forEach(b => b.addEventListener('click', () => { st.marginView = b.dataset.v; save(); render(); }));
+    document.querySelectorAll('#an-margin-rows button').forEach(b => b.addEventListener('click', () => { st.marginRows = b.dataset.r; save(); render(); }));
     let rt;
     addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (visible) render(); else dirty = true; }, 150); });
   }
@@ -118,6 +122,20 @@
       : 'статусы: нет данных';
     $('status').title = 'Задачи последних 3 дней сверяются с Bitrix при каждом запуске сборщика (раз в 15 минут), ' +
       'более ранние — раз в сутки после 04:00 на глубину 14 дней. В подсказке «Заказы по дням» — время сверки каждого дня.';
+  }
+
+  function loadScript(url, name) {
+    return new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = url; s.onload = ok; s.onerror = () => fail(new Error(name + ' не загрузился'));
+      document.head.appendChild(s);
+    });
+  }
+  // Observable Plot — только для «Штрихов»; после d3
+  function ensurePlot() {
+    if (root.Plot) return Promise.resolve();
+    if (!plotWait) plotWait = ensureD3().then(() => loadScript(PLOT_URL, 'Observable Plot'));
+    return plotWait;
   }
 
   function ensureD3() {
@@ -180,11 +198,21 @@
     $('minw-' + k + '-v').textContent = st.minw[k];
   }
 
+  function marginControls() {
+    const ticks = st.marginView === 'ticks';
+    document.querySelectorAll('#an-margin-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.marginView)));
+    document.querySelectorAll('#an-margin-rows button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === st.marginRows)));
+    $('margin-rows').hidden = !ticks;
+    $('margin-legend-bars').hidden = ticks;
+    $('margin-legend-ticks').hidden = !ticks;
+  }
+
   function render() {
     if (!M) return;
     if (!visible) { dirty = true; return; }
     dirty = false;
-    const ctx = { M, st, list: filtered(), $, update, roleColor };
+    const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot };
+    marginControls();
     status();
     D.kpis(ctx); D.days(ctx); D.projects(ctx); D.heat(ctx);
     D.lead(ctx); D.sla(ctx); D.margin(ctx);
