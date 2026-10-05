@@ -21,8 +21,29 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-from dashboard import PERSON, iso, parse_dt, short  # noqa: E402
+
+# «Иванов Иван Иванович (27.09.2026 20:55) = 2D: …; КГ: …» — по блоку на каждого, кто работал над задачей
+PERSON = re.compile(r"([А-ЯЁ][а-яё\-]+(?:\s+[А-ЯЁ][а-яё\-]+){1,2})\s*\(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\)\s*=")
+
+
+def short(name: str) -> str:
+    """«Иванов Иван Иванович» → «Иванов И. И.»"""
+    p = name.split()
+    return " ".join([p[0]] + [x[0] + "." for x in p[1:]])
+
+
+def parse_dt(s):
+    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        try:
+            return datetime.strptime(s, fmt)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def iso(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M") if dt else None
+
 
 REPO = HERE.parent.parent
 DB = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector" / "archive.sqlite"

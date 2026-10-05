@@ -2,8 +2,7 @@
  * Вкладка «Аналитика» на главной: корешки «Лента / Аналитика», загрузка analytics.json из ветки data
  * (сборщик: publish_analytics в tools/collector/collect.py), расшифровка паролем живой ленты, проверка раз в 5 минут.
  *
- * Пока вкладка за флагом: ?analytics=1 включает её в этом браузере (запоминается), ?analytics=0 — выключает.
- * Без флага страница выглядит как раньше. Данные можно подменить: ?analytics-data=<url> (для локальной проверки).
+ * Данные можно подменить: ?analytics-data=<url> (для локальной проверки).
  */
 (function (root) {
   'use strict';
@@ -11,7 +10,6 @@
   const L = root.GanttLive;
   const A = root.GanttAnalytics;
   if (!L || !A) return;
-  const FLAG = 'gantt-analytics.on';
   const POLL_MS = 5 * 60 * 1000;
 
   const store = {
@@ -19,9 +17,7 @@
     set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* не критично */ } },
   };
   const params = new URLSearchParams(location.search);
-  if (params.get('analytics') === '1') store.set(FLAG, '1');
-  if (params.get('analytics') === '0') store.set(FLAG, null);
-  if (store.get(FLAG) !== '1') return;
+  store.set('gantt-analytics.on', null);             // флаг времён проверки (?analytics=1) больше не нужен
 
   const url = params.get('analytics-data') || L.dataUrl.replace(/[^/]*$/, '') + 'analytics.json';
   const $ = id => document.getElementById(id);

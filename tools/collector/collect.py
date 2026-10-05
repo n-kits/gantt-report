@@ -334,17 +334,20 @@ def b64(b: bytes) -> str:
 def kdf_salt(password: str, iterations: int) -> bytes:
     """Одна соль PBKDF2 на все файлы (live.json, days/, analytics.json): браузер вычисляет ключ один раз,
     а не на каждый файл (250 000 итераций — заметные доли секунды). Уникальность шифрования даёт случайный iv
-    каждого файла. Соль хранится на этом ПК и меняется вместе с паролем или числом итераций."""
+    каждого файла. Соль хранится на этом ПК — своя на каждую пару «пароль + число итераций» (по отпечатку, не по
+    паролю): самопроверка с тестовым паролем не сбивает соль настоящего и не вызывает перешифровку архива."""
     path = APP_DIR / "kdf-salt.json"
     tag = hashlib.sha256(f"{password}\0{iterations}".encode("utf-8")).hexdigest()
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
-        if saved.get("tag") == tag:
-            return base64.b64decode(saved["salt"])
-    except (OSError, ValueError, KeyError):
-        pass
+    except (OSError, ValueError):
+        saved = {}
+    salts = saved.get("salts") or ({saved["tag"]: saved["salt"]} if saved.get("tag") else {})   # прежний формат: одна соль
+    if tag in salts:
+        return base64.b64decode(salts[tag])
     salt = os.urandom(16)
-    path.write_text(json.dumps({"tag": tag, "salt": b64(salt)}), encoding="utf-8")
+    salts[tag] = b64(salt)
+    path.write_text(json.dumps({"salts": salts}), encoding="utf-8")
     return salt
 
 
