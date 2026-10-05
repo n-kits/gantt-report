@@ -130,10 +130,22 @@ SCHEMA = {
 _SCHEMA = None
 
 
-def schema() -> dict:
+REGION_LIST_RULE = "строго одно значение из списка"
+REGION_FREE_RULE = "официальное название субъекта или области"
+
+
+def system_prompt(region_list: bool = True) -> str:
+    """Без закрытого списка регион — свободный текст (так было до 10.2026)."""
+    return SYSTEM_PROMPT if region_list else SYSTEM_PROMPT.replace(REGION_LIST_RULE, REGION_FREE_RULE)
+
+
+def schema(region_list: bool = True) -> dict:
     """SCHEMA с закрытым списком регионов (субъекты РФ и области Украины из справочника границ):
-    одинаковые формулировки во всех заказах — и подсказка геокодеру, и единый регион."""
+    одинаковые формулировки во всех заказах — и подсказка геокодеру, и единый регион.
+    region_list=False — регион свободной строкой (дешевле на ~8 тыс. входных токенов на запрос)."""
     global _SCHEMA
+    if not region_list:
+        return SCHEMA
     if _SCHEMA is None:
         import copy
         import places
@@ -297,14 +309,29 @@ def km(a, b) -> float:
 # LLM
 # ---------------------------------------------------------------------------
 
-def analyze(tasks: list[dict], cfg: dict) -> dict:
-    """tasks: [{id, name, text}] → {id: {themes, conflict, sentiment, toponyms}}."""
+def analyze(tasks: list[dict], cfg: dict, region_list: bool | None = None, cache_ttl: str | None = None,
+            usage: list | None = None) -> dict:
+    """
+    tasks: [{id, name, text}] → {id: {themes, conflict, sentiment, toponyms}}.
+    region_list — закрытый список регионов (по умолчанию cfg["llm_region_list"], иначе да);
+    cache_ttl — кэширование промпта «5m» / «1h» (по умолчанию cfg["llm_cache_ttl"], иначе без кэша):
+    системная инструкция одинакова во всех запросах, метка кэша — на её конце;
+    usage — сюда дописывается расход токенов по каждому запросу.
+    """
     import anthropic
 
     key = api_key()
     if not key:
         raise RuntimeError("не задан ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=key, timeout=180, max_retries=2)
+    if region_list is None:
+        region_list = cfg.get("llm_region_list", True)
+    if cache_ttl is None:
+        cache_ttl = cfg.get("llm_cache_ttl")
+    system = system_prompt(region_list)
+    if cache_ttl:
+        cc = {"type": "ephemeral"} if cache_ttl == "5m" else {"type": "ephemeral", "ttl": cache_ttl}
+        system = [{"type": "text", "text": system, "cache_control": cc}]
     out = {}
     for i in range(0, len(tasks), BATCH_SIZE):
         batch = tasks[i:i + BATCH_SIZE]
@@ -318,10 +345,16 @@ def analyze(tasks: list[dict], cfg: dict) -> dict:
             max_tokens=16000,
             **fb,
             output_config={"effort": cfg.get("llm_effort", "medium"),
-                           "format": {"type": "json_schema", "schema": schema()}},
-            system=SYSTEM_PROMPT,
+                           "format": {"type": "json_schema", "schema": schema(region_list)}},
+            system=system,
             messages=[{"role": "user", "content": body}],
         )
+        u = resp.usage
+        rec = {"tasks": len(batch), "input": u.input_tokens, "output": u.output_tokens,
+               "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
+               "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0, "stop": resp.stop_reason}
+        if usage is not None:
+            usage.append(rec)
         if resp.stop_reason == "refusal":
             cat = resp.stop_details.category if resp.stop_details else None
             log.warning("Модель отказалась анализировать задачи %s (%s)", [t["id"] for t in batch], cat)
@@ -332,7 +365,8 @@ def analyze(tasks: list[dict], cfg: dict) -> dict:
         text = next((b.text for b in resp.content if b.type == "text"), "")
         for item in json.loads(text).get("items", []):
             out[str(item["id"])] = {k: item[k] for k in ("themes", "conflict", "sentiment", "toponyms")}
-        log.info("LLM: задач %s, токенов вход/выход %s/%s", len(batch), resp.usage.input_tokens, resp.usage.output_tokens)
+        log.info("LLM: задач %s, токенов вход/выход %s/%s, кэш запись/чтение %s/%s", len(batch),
+                 rec["input"], rec["output"], rec["cache_write"], rec["cache_read"])
     return out
 
 

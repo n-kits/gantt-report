@@ -95,21 +95,28 @@ def update(db: sqlite3.Connection, cfg: dict, res: dict, geo_part: dict | None, 
                      description=COALESCE(excluded.description, tasks.description), last_seen=excluded.last_seen""",
                 dict(vals, id=t["id"], day=day, url=t.get("url", ""), description=texts.get(t["id"]) or None, now=now))
             n += 1
-        for it in (geo_part or {}).get("items", []):
-            db.execute(
-                """INSERT INTO analysis (task_id, themes, conflict, sentiment, model, updated) VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(task_id) DO UPDATE SET themes=excluded.themes, conflict=excluded.conflict,
-                     sentiment=excluded.sentiment, model=excluded.model, updated=excluded.updated""",
-                (it["id"], " / ".join(it.get("themes", [])), it.get("conflict", ""), it.get("sentiment", ""),
-                 it.get("model", ""), now))
-            db.execute("DELETE FROM toponyms WHERE task_id = ?", (it["id"],))
-            db.executemany(
-                """INSERT INTO toponyms (task_id, idx, name, kind, macro, iso, lat, lon, src, dkm, approx, region, country, pid)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [(it["id"], i, p.get("name"), p.get("kind"), p.get("macro", ""), p.get("iso"), p.get("lat"), p.get("lon"),
-                  p.get("src", ""), p.get("dkm"), 1 if p.get("approx") else 0,
-                  p.get("region", ""), p.get("country", ""), p.get("pid")) for i, p in enumerate(it["toponyms"])])
+        save_analysis(db, (geo_part or {}).get("items", []), now)
     return n
+
+
+def save_analysis(db: sqlite3.Connection, items: list[dict], now: str | None = None) -> None:
+    """Анализ задач (темы, конфликт, тональность, топонимы в формате geo.published) → база.
+    Вызывать внутри транзакции (with db) или вслед за ней — db.execute сам по себе не коммитит."""
+    now = now or datetime.now().isoformat(timespec="seconds")
+    for it in items:
+        db.execute(
+            """INSERT INTO analysis (task_id, themes, conflict, sentiment, model, updated) VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(task_id) DO UPDATE SET themes=excluded.themes, conflict=excluded.conflict,
+                 sentiment=excluded.sentiment, model=excluded.model, updated=excluded.updated""",
+            (it["id"], " / ".join(it.get("themes", [])), it.get("conflict", ""), it.get("sentiment", ""),
+             it.get("model", ""), now))
+        db.execute("DELETE FROM toponyms WHERE task_id = ?", (it["id"],))
+        db.executemany(
+            """INSERT INTO toponyms (task_id, idx, name, kind, macro, iso, lat, lon, src, dkm, approx, region, country, pid)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(it["id"], i, p.get("name"), p.get("kind"), p.get("macro", ""), p.get("iso"), p.get("lat"), p.get("lon"),
+              p.get("src", ""), p.get("dkm"), 1 if p.get("approx") else 0,
+              p.get("region", ""), p.get("country", ""), p.get("pid")) for i, p in enumerate(it["toponyms"])])
 
 
 def prune(db: sqlite3.Connection, days: list[str], seen: set[str]) -> int:

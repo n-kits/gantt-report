@@ -66,6 +66,8 @@ DEFAULTS = {
     "llm": False,               # анализ через Claude выключен по умолчанию; включить — --llm on / llm-on.cmd
     "llm_model": "claude-sonnet-5-5",
     "llm_effort": "medium",
+    "llm_region_list": False,   # регион в ответе LLM — свободная строка (A/B 10.2026: качество как со списком, запрос вдвое дешевле)
+    "llm_cache_ttl": None,      # кэш промпта: None — нет (запросы раз в 15+ мин по 1 заказу), «5m» / «1h»
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
     "archive": True,            # локальный архив задач (archive.sqlite) и выгрузка выпавших дней в Excel
     "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив

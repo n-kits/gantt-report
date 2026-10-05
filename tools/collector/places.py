@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 ADMIN1 = HERE.parent.parent / "data" / "admin1.json.gz"
 
 # версия правил: сменилась — сборщик один раз пересчитывает регионы и pid в архиве (collect.migrate_places)
-VERSION = 1
+VERSION = 2          # 2 — Киевская область (в Natural Earth была подписана «Киев»)
 SUSPICIOUS_KM = 30          # одно название дальше этого в одной стране — на проверку
 KIND_LABEL = {"water": "водный объект", "region": "регион", "country": "страна"}
 
