@@ -381,6 +381,7 @@ class Geocoder:
         self._last = 0.0
         self.countries = {c["iso"] for c in _load_json(BASEMAP_PATH, {}).get("countries", [])}
         self.unresolved: list[str] = []
+        self.hits = self.asked = 0          # за запуск: точек из кэша / запросов к Nominatim (в журнал)
 
     def _nominatim(self, query: str):
         """→ (кандидаты [[lat, lon], …], был ли ответ). Одноимённых мест бывает несколько."""
@@ -390,6 +391,7 @@ class Geocoder:
         wait = NOMINATIM_PAUSE - (time.time() - self._last)
         if wait > 0:
             time.sleep(wait)
+        self.asked += 1
         try:
             locs = self._nom.geocode(query, language="ru", exactly_one=False, limit=5) or []
         except Exception as e:  # noqa: BLE001 — сеть/лимиты: просто нет ответа
@@ -416,10 +418,13 @@ class Geocoder:
         macro = (t.get("region") or (t.get("macro") or "").split(",")[0]).strip()
         keys = [f"{name} ({macro})", name] if macro else [name]
 
+        # источник — откуда точка взята в этот раз: «cache» — уже была (прошлые запросы сборщика или массовое
+        # геокодирование, тоже Nominatim), «nominatim» — запрос ушёл в этом запуске
         for k in keys:                                   # 1. кэш
             found, c = self.cache.get(k)
             if found and c and ok(c[:2]):
-                return self._point(name, kind, c[:2], c[2] if len(c) > 2 else "cache")
+                self.hits += 1
+                return self._point(name, kind, c[:2], "cache")
         query = (t.get("query") or "").strip()
         asked = False
         if query:                                        # 2. Nominatim (ответ, даже пустой, кэшируется)
@@ -434,7 +439,9 @@ class Geocoder:
             c = cands[0] if cands else None
             if ok(c):
                 self.cache.put(keys[0], c + ["nominatim"])
-                return self._point(name, kind, c, "nominatim")
+                if not asked:
+                    self.hits += 1                       # ответ на этот запрос уже был в кэше
+                return self._point(name, kind, c, "nominatim" if asked else "cache")
         # 3. оценка модели; в журнал — только впервые (когда спрашивали Nominatim в этот раз)
         if asked or not query:
             self.unresolved.append(f"{name}; {macro}; {query}; {est[0] if est else ''}; {est[1] if est else ''}")
@@ -599,4 +606,5 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     approx = sum(1 for i in items for p in i["toponyms"] if p.get("approx"))
     log.info("Карта: задач с анализом %s из %s, топонимов %s, приблизительных %s",
              len(items), len(res["rows"]), n, approx)
+    log.info("Геокодер: из кэша %s, запросов к Nominatim %s", coder.hits, coder.asked)
     return {"v": 1, "llm": bool(llm_on), "waiting": waiting, "items": items}
