@@ -1,0 +1,169 @@
+/* Вкладка «Аналитика» (js/analytics/*.js). Всё внутри .an; цвета — токены --an-*.
+   Главная — только светлая, поэтому и вкладка светлая; палитра серий проверена на различимость. */
+
+/* --- вкладки страницы (продолжение баннера) ------------------------------ */
+.tabs { background: var(--header); padding: 0 16px; display: flex; gap: 4px; }
+.tabs a {
+  font-size: 14px; font-weight: 700; text-decoration: none; color: var(--line);
+  padding: 7px 16px 6px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0;
+}
+.tabs a:hover { color: #fff; background: rgba(255, 255, 255, .06); }
+.tabs a[aria-selected="true"] { color: var(--header); background: var(--page); }
+.tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+[role="tabpanel"][hidden] { display: none !important; }
+
+.an {
+  --an-surface: #FCFCFB;
+  --an-ink: #0B0B0B;
+  --an-ink-2: #52514E;
+  --an-muted: #898781;
+  --an-grid: #E1E0D9;
+  --an-axis: #C3C2B7;
+  --an-ring: rgba(11, 11, 11, .10);
+  --an-accent: #C45C26;
+  --an-hover: rgba(11, 11, 11, .04);
+  --an-s1: #2A78D6;          /* Плазма · картографы · 1-я страна */
+  --an-s2: #EB6834;          /* Анимированная карта · дизайнеры */
+  --an-s3: #1BAF7A;          /* Overmap\Overglobe */
+  --an-s4: #EDA100;
+  --an-s5: #E87BA4;
+  --an-other: #C3C2B7;
+  --an-seq: #1C5CAB;         /* тепловая карта: один тон, прозрачность — величина */
+  --an-good: #0CA30C;
+  --an-critical: #D03B3B;
+  --an-good-ink: #006300;
+  --an-critical-ink: #B42318;
+  --an-early: #2A78D6;
+  --an-late: #E34948;
+  --an-link: #52514E;
+  --an-hl: #C45C26;
+  color: var(--an-ink); font-size: 14px; flex: 1;
+}
+
+/* --- общая панель: фильтры и разделы ------------------------------------- */
+.an-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 8px 16px; background: var(--an-surface); border-bottom: 1px solid var(--an-ring);
+}
+.an-bar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--an-ink-2); }
+.an-bar input, .an-bar select {
+  font: inherit; font-size: 13px; color: var(--an-ink); background: var(--an-surface);
+  border: 1px solid var(--an-axis); border-radius: 6px; padding: 3px 6px; height: 28px;
+}
+.an-bar select { max-width: 220px; }
+.an-seg { display: inline-flex; border: 1px solid var(--an-axis); border-radius: 6px; overflow: hidden; }
+.an-seg button { font: inherit; font-size: 13px; padding: 4px 10px; border: 0; background: transparent; color: var(--an-ink-2); cursor: pointer; }
+.an-seg button + button { border-left: 1px solid var(--an-axis); }
+.an-seg button:hover { background: var(--an-hover); }
+.an-seg button[aria-pressed="true"] { background: var(--an-ink); color: var(--an-surface); font-weight: 700; }
+.an-link { font: inherit; font-size: 13px; background: none; border: 0; color: var(--an-accent); cursor: pointer; padding: 0; }
+.an-link:hover { text-decoration: underline; }
+.an-nav { margin-left: auto; display: flex; gap: 2px; }
+.an-nav button { font: inherit; font-size: 13px; font-weight: 700; color: var(--an-ink-2); background: none; border: 0;
+                 padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+.an-nav button:hover { background: var(--an-hover); color: var(--an-ink); }
+
+.an-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 16px 0; font-size: 13px; color: var(--an-ink-2);
+           max-width: 1480px; margin: 0 auto; }
+.an-meta b { color: var(--an-ink); }
+.an-meta #an-status { cursor: help; border-bottom: 1px dotted var(--an-axis); }
+
+/* --- разделы и карточки --------------------------------------------------- */
+.an-sec { max-width: 1480px; margin: 0 auto; padding: 4px 16px 8px; scroll-margin-top: 56px; }
+.an-sec > h2 { margin: 14px 0 8px; font-size: 18px; font-weight: 700; color: var(--header); }
+.an-sec > h2 small { font-size: 13px; font-weight: 400; color: var(--an-ink-2); margin-left: 8px; }
+.an-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.an-col { grid-column: span 4; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.an-card { background: var(--an-surface); border: 1px solid var(--an-ring); border-radius: 10px; padding: 14px 16px 12px;
+           grid-column: span 6; min-width: 0; }
+.an-card.w12 { grid-column: span 12; } .an-card.w8 { grid-column: span 8; } .an-card.w4 { grid-column: span 4; }
+@media (max-width: 1000px) {
+  .an-card, .an-card.w8, .an-card.w4, .an-col { grid-column: span 12; }
+  .an-nav { margin-left: 0; }
+}
+/* на телефоне панель фильтров в несколько строк заняла бы пол-экрана — не липнет */
+@media (max-width: 700px) { .an-bar { position: static; } }
+.an-card h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.an-card .an-cap, .an-cap { margin: 2px 0 10px; font-size: 12.5px; color: var(--an-ink-2); }
+.an-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.an-sub { font-size: 12.5px; color: var(--an-muted); font-variant-numeric: tabular-nums; }
+.an-empty { color: var(--an-muted); font-size: 13px; padding: 24px 0; text-align: center; }
+.an-chart { width: 100%; position: relative; }
+.an-chart svg { display: block; overflow: visible; }
+
+/* настройки графа связей */
+.an-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 4px 0 6px; font-size: 13px; color: var(--an-ink-2); }
+.an-tools label { display: inline-flex; align-items: center; gap: 6px; }
+.an-tools output { font-variant-numeric: tabular-nums; min-width: 24px; color: var(--an-ink); font-weight: 700; }
+.an-tools input[type="date"] { font: inherit; font-size: 13px; height: 28px; padding: 0 6px; border: 1px solid var(--an-axis); border-radius: 6px; }
+.an-win { display: inline-flex; align-items: center; gap: 6px; }
+.an-arrow { font: inherit; font-size: 16px; line-height: 1; width: 28px; height: 28px; border: 1px solid var(--an-axis);
+            border-radius: 6px; background: var(--an-surface); color: var(--an-ink); cursor: pointer; }
+.an-arrow:hover { background: var(--an-hover); }
+.an-arrow:disabled { opacity: .35; cursor: default; }
+.an-pin { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 12px;
+          background: rgba(196, 92, 38, .12); color: var(--an-ink); font-size: 12.5px; }
+.an-pin[hidden] { display: none; }
+
+/* цифры */
+.an .kpis { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 16px; align-items: end; }
+.an .kpis.two-kpi { grid-template-columns: repeat(4, 1fr); margin-bottom: 10px; }
+@media (max-width: 1000px) { .an .kpis, .an .kpis.two-kpi { grid-template-columns: 1fr 1fr; } }
+.an .kpi .label { font-size: 13px; color: var(--an-ink-2); }
+.an .kpi .value { font-size: 30px; font-weight: 700; line-height: 1.15; margin-top: 2px; }
+.an .kpi.hero .value { font-size: 52px; }
+.an .kpi .delta { font-size: 12.5px; color: var(--an-ink-2); margin-top: 2px; }
+.an .kpi .delta b { color: var(--an-ink); }
+
+/* легенда */
+.an-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--an-ink-2); margin: 0 0 8px; }
+.an-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.an-legend button { font: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; border-radius: 4px;
+                    display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.an-legend button:hover { background: var(--an-hover); }
+.an-legend button[aria-pressed="false"] { opacity: .45; }
+.an .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.an .sw.round { border-radius: 50%; }
+.an .ico { font-weight: 700; }
+
+/* таблица-дубль под графиком */
+.an details.tbl { margin-top: 8px; font-size: 12.5px; }
+.an details.tbl summary { cursor: pointer; color: var(--an-ink-2); width: max-content; }
+.an details.tbl table { border-collapse: collapse; margin-top: 6px; width: 100%; font-variant-numeric: tabular-nums; }
+.an details.tbl th, .an details.tbl td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--an-grid); }
+.an details.tbl td.n, .an details.tbl th.n { text-align: right; }
+.an details.tbl .scroll { max-height: 280px; overflow: auto; }
+
+/* подсказка */
+.an-tip { position: fixed; z-index: 30; pointer-events: none; background: var(--an-surface); color: var(--an-ink);
+          border: 1px solid var(--an-ring); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .14);
+          padding: 8px 10px; font-size: 12.5px; min-width: 140px; max-width: 300px; }
+.an-tip .t { font-weight: 700; margin-bottom: 2px; }
+.an-tip .g { color: var(--an-ink-2); margin: 2px 0; }
+.an-tip .r { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.an-tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--an-ink-2); }
+.an-tip .r b { font-variant-numeric: tabular-nums; }
+.an-tip .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* svg */
+.an svg text { fill: var(--an-muted); font-size: 11px; font-family: inherit; }
+.an svg text.lbl { fill: var(--an-ink-2); font-size: 12px; }
+.an svg text.val { fill: var(--an-ink); font-size: 12px; font-weight: 700; }
+.an svg .gridline { stroke: var(--an-grid); stroke-width: 1; shape-rendering: crispEdges; }
+.an svg .baseline { stroke: var(--an-axis); stroke-width: 1; shape-rendering: crispEdges; }
+.an svg .hit { fill: transparent; }
+.an svg .hit.click { cursor: pointer; }
+.an svg .hit:hover { fill: var(--an-hover); }
+.an svg g.dim { opacity: .3; }
+
+/* граф связей */
+.an-graph { display: flex; justify-content: center; }
+.an svg.an-bundle { width: 100%; height: auto; overflow: visible; }
+.an svg.an-bundle text { font-size: inherit; fill: var(--an-ink-2); }
+.an svg.an-bundle text.on { fill: var(--an-ink); font-weight: 700; }
+.an svg.an-bundle text.off { fill: var(--an-muted); opacity: .55; }
+.an svg.an-bundle .link { fill: none; stroke: var(--an-link); }   /* без mix-blend-mode: сотни путей тормозят отрисовку */
+.an svg.an-bundle .link.hl { stroke: var(--an-hl); stroke-opacity: .95 !important; }
+.an svg.an-bundle .link.dim { stroke-opacity: .04 !important; }
+@media (forced-colors: active) { .an svg rect, .an svg path { forced-color-adjust: none; } }
