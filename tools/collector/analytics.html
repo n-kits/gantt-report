@@ -53,6 +53,11 @@ __PANEL__
       A.setVisible(tab === 'analytics');
       if (tab === 'analytics' && !loaded) { loaded = true; document.getElementById('panel-analytics').classList.remove('an-wait'); A.setData(window.ANALYTICS_DATA); }
     }
+    // «← Лента» — только когда корешки вкладок ушли за верх экрана (как на главной, js/analytics/tab.js)
+    const back = document.querySelector('.an-back'), tabs = document.querySelector('.tabs');
+    const syncBack = () => { back.hidden = tabs.getBoundingClientRect().bottom > 0; };
+    addEventListener('scroll', syncBack, { passive: true });
+    syncBack();
     addEventListener('hashchange', show);
     show();
   })();

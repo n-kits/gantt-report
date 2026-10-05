@@ -86,6 +86,11 @@
   }
 
   tabs.hidden = false;
+  // «← Лента» парит, только когда корешки вкладок ушли за верх экрана — пока они видны, кнопка не нужна
+  const back = document.querySelector('.an-back');
+  const syncBack = () => { back.hidden = tabs.getBoundingClientRect().bottom > 0; };
+  addEventListener('scroll', syncBack, { passive: true });
+  syncBack();
   A.mount();
   addEventListener('hashchange', route);
   document.addEventListener('gantt-live-password', () => load(true));
