@@ -136,6 +136,13 @@
 .an details.tbl th, .an details.tbl td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--an-grid); }
 .an details.tbl td.n, .an details.tbl th.n { text-align: right; }
 .an details.tbl .scroll { max-height: 280px; overflow: auto; }
+/* компактная таблица (исполнители): помещается в узкую карточку без прокрутки */
+.an details.tbl table.compact { font-size: 12px; }
+.an details.tbl table.compact th, .an details.tbl table.compact td { padding: 3px 3px; white-space: nowrap; }
+.an details.tbl table.compact th { font-weight: 400; color: var(--an-ink-2); }
+.an details.tbl table.compact th.grp { text-align: center; font-weight: 700; color: var(--an-ink); border-bottom: 1px solid var(--an-axis); }
+.an details.tbl table.compact .nm { display: inline-block; vertical-align: bottom; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+.an details.tbl .scroll.full { max-height: none; overflow: visible; }
 
 /* подсказка */
 .an-tip { position: fixed; z-index: 30; pointer-events: none; background: var(--an-surface); color: var(--an-ink);
@@ -169,3 +176,7 @@
 .an svg.an-bundle .link.hl { stroke: var(--an-hl); stroke-opacity: .95 !important; mix-blend-mode: normal; }
 .an svg.an-bundle .link.dim { stroke-opacity: .04 !important; }
 @media (forced-colors: active) { .an svg rect, .an svg path { forced-color-adjust: none; } }
+/* «Люди»: компактная таблица исполнителей помещается в треть ширины от ~1240px; уже — карточки друг под другом */
+@media (max-width: 1240px) { #an-s-people .an-card { grid-column: span 12; } }
+/* на телефоне 8 колонок не помещаются никак — прокрутка внутри таблицы, а не всей страницы */
+@media (max-width: 700px) { .an details.tbl .scroll.full { overflow-x: auto; } }

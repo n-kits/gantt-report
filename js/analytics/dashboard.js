@@ -304,24 +304,39 @@
   }
 
   // === Люди =================================================================
-  // каждый, кто есть в «Выполнении задачи», — один раз на заказ; клик — подсветить в графе связей
+  // каждый, кто есть в «Выполнении задачи», — один раз на заказ; клик — подсветить в графе связей.
+  // Медиана и «в срок» — отдельно по одиночным и совместным заказам: совместный заказ — общий результат
+  // всех участников, и задержка одного не должна выглядеть как личная статистика другого.
   function execs(ctx) {
     const { M, list } = ctx;
     const groups = new Map();
     list.forEach(t => t.workers.forEach(w => { if (!groups.has(w)) groups.set(w, []); groups.get(w).push(t); }));
-    const all = [...groups.entries()].map(([k, ts]) => {
+    const stat = ts => {
       const sl = ts.filter(t => t.onTime != null);
-      return { key: k, label: k, value: ts.length, role: M.people[k] || 'Дизайнер',
-               med: median(ts.map(t => t.lead).filter(v => v != null)), ok: sl.length ? sl.filter(t => t.onTime).length / sl.length : null };
-    }).sort((a, b) => b.value - a.value);
+      return { n: ts.length, med: median(ts.map(t => t.lead).filter(v => v != null)),
+               ok: sl.length ? sl.filter(t => t.onTime).length / sl.length : null };
+    };
+    const all = [...groups.entries()].map(([k, ts]) => ({
+      key: k, label: k, value: ts.length, role: M.people[k] || 'Дизайнер',
+      solo: stat(ts.filter(t => t.workers.length === 1)), team: stat(ts.filter(t => t.workers.length > 1)),
+    })).sort((a, b) => b.value - a.value);
     all.forEach(it => { it.color = ctx.roleColor(it.role); });
+    const part = (title, x) => `<div class="g">${title} — ${fmtN(x.n)}</div>` +
+      (x.n ? row('', 'Медиана выполнения', fmtH(x.med)) + row('', 'В срок', fmtPct(x.ok)) : '');
     hbars(ctx.$('execs'), all.slice(0, 14), {
       title: 'Исполнители', labelW: 130, active: ctx.st.person,
-      tip: it => `<div class="t">${esc(it.label)}</div><div class="g">${esc(it.role)}</div>${row('', 'Заказов', fmtN(it.value))}${row('', 'Медиана выполнения', fmtH(it.med))}${row('', 'В срок', fmtPct(it.ok))}`,
+      tip: it => `<div class="t">${esc(it.label)}</div><div class="g">${esc(it.role)} · заказов ${fmtN(it.value)}</div>` +
+        part('Один', it.solo) + part('Совместно', it.team),
       onClick: it => ctx.update({ person: ctx.st.person === it.key ? '' : it.key }, true),
     });
-    ctx.$('execs-t').innerHTML = table(['Исполнитель', 'Профиль', 'Заказов с участием', 'Медиана', 'В срок'],
-      all.map(it => [it.label, it.role, it.value, fmtH(it.med), fmtPct(it.ok)]));
+    // компактная таблица под узкую карточку: профиль — цветной точкой, «Один» и «Совместно» — группами колонок
+    const cells = x => x.n ? `<td class="n">${fmtN(x.n)}</td><td class="n">${fmtH(x.med)}</td><td class="n">${fmtPct(x.ok)}</td>`
+      : '<td class="n">0</td><td></td><td></td>';
+    ctx.$('execs-t').innerHTML = `<table class="compact"><thead>` +
+      `<tr><th rowspan="2">Исполнитель</th><th rowspan="2" class="n">Всего</th><th colspan="3" class="grp">Один</th><th colspan="3" class="grp">Совместно</th></tr>` +
+      `<tr><th class="n">зак.</th><th class="n" title="медиана выполнения">мед.</th><th class="n">в срок</th><th class="n">зак.</th><th class="n" title="медиана выполнения">мед.</th><th class="n">в срок</th></tr></thead><tbody>` +
+      all.map(it => `<tr><td title="${esc(it.label)} · ${esc(it.role)}"><span class="sw round" style="background:${it.color}"></span> <span class="nm">${esc(it.label)}</span></td>` +
+        `<td class="n">${fmtN(it.value)}</td>${cells(it.solo)}${cells(it.team)}</tr>`).join('') + `</tbody></table>`;
   }
 
   // === География ============================================================
