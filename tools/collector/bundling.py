@@ -14,6 +14,7 @@ Hierarchical edge bundling по локальному архиву (archive.sqlit
 """
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ from dashboard import PERSON, short  # noqa: E402
 REPO = HERE.parent.parent
 DB = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector" / "archive.sqlite"
 OUT = REPO / "in" / "bundling.html"
+# у водных объектов LLM даёт один тип — без «реки» в названии это море, озеро и т. п.
+WATER_WORD = re.compile(r"(?i)море|озер|залив|пролив|океан|водохранилищ|лиман|канал|бухт|губа|река|ручей")
 def people(works: str) -> list[str]:
     """«Иванов Иван Иванович (дата) = 2D: …. Петров …» → ["Иванов И. И.", "Петров …"] — все, кто работал над задачей."""
     return sorted({short(n) for n in PERSON.findall(works or "")})
@@ -58,13 +61,10 @@ def main() -> int:
             pids.setdefault(x["name"], set()).add(x["pid"])
     for t in tops.values():
         for x in t["tops"].values():
-            if len(pids[x["name"]]) > 1:
-                if x["kind"] == "water":
-                    x["name"] += " (водный объект)"
-                elif x["kind"] in ("region", "other"):
-                    x["name"] += " (регион)" if x["kind"] == "region" else " (объект)"
-                elif x["region"] and x["region"] != x["name"]:      # «Москва (Москва)» не пишем
-                    x["name"] += f" ({x['region']})"
+            # одноимённые места различаются по подсказке и положению на окружности (страна → регион);
+            # уточнение — только у реки, совпадающей по названию с городом («Днепр (река)»)
+            if len(pids[x["name"]]) > 1 and x["kind"] == "water" and not WATER_WORD.search(x["name"]):
+                x["name"] += " (река)"
             del x["kind"]
     # фамилии картографов — только в локальном config.json сборщика (в репозитории их нет)
     try:
