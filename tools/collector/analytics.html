@@ -44,6 +44,8 @@ __PANEL__
     let loaded = false;
     function show() {
       const tab = location.hash === '#timeline' ? 'timeline' : 'analytics';
+      if (show.tab && show.tab !== tab) scrollTo(0, 0);
+      show.tab = tab;
       ['timeline', 'analytics'].forEach(k => {
         document.getElementById('tab-' + k).setAttribute('aria-selected', String(k === tab));
         document.getElementById('panel-' + k).hidden = k !== tab;

@@ -77,6 +77,10 @@
 .an-nav button { font: inherit; font-size: 13px; font-weight: 700; color: var(--an-ink-2); background: none; border: 0;
                  padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 .an-nav button:hover { background: var(--an-hover); color: var(--an-ink); }
+.an-back { font-size: 13px; font-weight: 700; text-decoration: none; color: var(--an-surface); background: var(--header);
+           padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
+.an-back:hover { background: var(--navy); }
+.an-back:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 2px; }
 
 .an-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 16px 0; font-size: 13px; color: var(--an-ink-2);
            max-width: 1480px; margin: 0 auto; }

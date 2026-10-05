@@ -66,8 +66,12 @@
   }
 
   // --- вкладки --------------------------------------------------------------
+  let current = null;
   function route() {
     const tab = location.hash === '#analytics' ? 'analytics' : 'timeline';
+    // сменили вкладку (в том числе «← Лента» из глубины аналитики) — к началу страницы
+    if (current && current !== tab) scrollTo(0, 0);
+    current = tab;
     ['timeline', 'analytics'].forEach(k => {
       $('tab-' + k).setAttribute('aria-selected', String(k === tab));
       $('panel-' + k).hidden = k !== tab;
