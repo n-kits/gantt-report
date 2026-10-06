@@ -137,12 +137,12 @@ def prune(db: sqlite3.Connection, days: list[str], seen: set[str]) -> int:
     return len(gone)
 
 
-def missing(db: sqlite3.Connection, days: list[str], seen: set[str]) -> int:
-    """Сколько задач архива за эти дни Bitrix не вернул."""
+def missing(db: sqlite3.Connection, days: list[str], seen: set[str]) -> list[str]:
+    """Номера задач архива за эти дни, которых Bitrix не вернул."""
     if not days:
-        return 0
+        return []
     marks = ",".join("?" * len(days))
-    return sum(1 for (i,) in db.execute(f"SELECT id FROM tasks WHERE day IN ({marks})", days) if i not in seen)
+    return sorted(i for (i,) in db.execute(f"SELECT id FROM tasks WHERE day IN ({marks})", days) if i not in seen)
 
 
 def days_checked(db: sqlite3.Connection) -> list[tuple[str, str]]:
