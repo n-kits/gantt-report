@@ -229,7 +229,7 @@
       const sla = inBin.filter(t => t.onTime != null);
       return { label, value: inBin.length, ok: sla.filter(t => t.onTime).length, sla: sla.length };
     });
-    if (!leads.length) { el.innerHTML = '<div class="an-empty">Нет завершённых заказов</div>'; ctx.$('lead-t').innerHTML = ''; return; }
+    if (!leads.length) { el.innerHTML = '<div class="an-empty">Нет выполненных заказов</div>'; ctx.$('lead-t').innerHTML = ''; return; }
     const W = widthOf(el), H = 220, L = 34, R = 8, T = 18, B = 26;
     const tk = ticks(Math.max(...bins.map(b => b.value))), max = tk.top;
     const band = (W - L - R) / bins.length, bw = Math.min(24, band * 0.62);
@@ -242,7 +242,7 @@
         `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
     });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Время выполнения">${s}</svg>` +
-      `<div class="an-cap">Медиана — ${fmtH(median(leads.map(t => t.lead)))}; завершённых — ${fmtN(leads.length)}.</div>`;
+      `<div class="an-cap">Медиана — ${fmtH(median(leads.map(t => t.lead)))}; выполненных — ${fmtN(leads.length)}.</div>`;
     bindHits(el, bins, b => `<div class="t">${b.label}</div>${row('', 'Заказов', fmtN(b.value))}${row('', 'Из них в срок', b.sla ? fmtPct(b.ok / b.sla) : '—')}`);
     ctx.$('lead-t').innerHTML = table(['Время', 'Заказов', 'В срок'], bins.map(b => [b.label, b.value, b.sla ? fmtPct(b.ok / b.sla) : '—']));
   }
@@ -253,7 +253,7 @@
       const s = ctx.list.filter(t => t.pkey === p.key && t.onTime != null);
       return { p, ok: s.filter(t => t.onTime).length, bad: s.filter(t => !t.onTime).length };
     }).filter(r => r.ok + r.bad);
-    if (!rows.length) { el.innerHTML = '<div class="an-empty">Нет завершённых заказов с крайним сроком</div>'; ctx.$('sla-t').innerHTML = ''; return; }
+    if (!rows.length) { el.innerHTML = '<div class="an-empty">Нет выполненных заказов с крайним сроком</div>'; ctx.$('sla-t').innerHTML = ''; return; }
     const W = widthOf(el), rowH = 34, bh = 18, labelW = Math.min(170, W * 0.4), H = rows.length * rowH;
     const bw = W - labelW - 8;
     let s = '';
@@ -286,7 +286,7 @@
       `<div class="kpi"><div class="label">Позже срока</div><div class="value">${fmtN(late.length)}</div><div class="delta">${fmtPct(ms.length ? late.length / ms.length : null)} заказов с крайним сроком</div></div>`,
       `<div class="kpi"><div class="label">Опоздание, медиана</div><div class="value">${fmtH(median(late))}</div><div class="delta">у 10% — больше ${fmtH(q(late, 0.9))}, максимум ${fmtH(late.length ? Math.max(...late) : null)}</div></div>`,
     ].join('');
-    if (!ms.length) { el.innerHTML = '<div class="an-empty">Нет завершённых заказов с крайним сроком</div>'; ctx.$('margin-t').innerHTML = ''; return; }
+    if (!ms.length) { el.innerHTML = '<div class="an-empty">Нет выполненных заказов с крайним сроком</div>'; ctx.$('margin-t').innerHTML = ''; return; }
     if (ctx.st.marginView === 'ticks') { strips(ctx, el, list); marginTable(ctx, list); return; }
     const nb = MARGIN_BINS.length;
     const cols = [

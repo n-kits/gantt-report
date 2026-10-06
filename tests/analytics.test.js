@@ -32,11 +32,16 @@
     ],
   };
 
+  test('аналитика: «Выполняется» не считается выполненным, даже с датой завершения', () => {
+    const M = A.prepare(Object.assign({}, PAYLOAD, { tasks: [Object.assign({}, PAYLOAD.tasks[0], { status: 'Выполняется' })] }));
+    eq([M.tasks[0].onTime, M.tasks[0].lead], [null, null]);
+  });
+
   test('аналитика: подготовка модели — срок, время выполнения, вид продукции, регионы', () => {
     const M = A.prepare(PAYLOAD);
     eq([M.firstDay, M.lastDay], ['2026-10-01', '2026-10-05']);
-    eq(M.tasks.map(t => t.onTime), [true, false, null], 'в срок только у «Завершена»');
-    eq(M.tasks.map(t => t.lead), [1, 4, null], 'часы от регистрации до завершения');
+    eq(M.tasks.map(t => t.onTime), [true, false, true], 'в срок — у «Завершена» и «На рассмотрении»');
+    eq(M.tasks.map(t => t.lead), [1, 4, 0.5], 'часы от регистрации до завершения');
     eq(M.tasks.map(t => t.pkey), ['plasma', 'clip', 'map']);
     eq(M.tasks[0].areas, ['Республика Татарстан', 'Украина'], 'регион, у страны — страна');
     eq(M.tasks[1].areas, null, 'без анализа LLM — нет регионов');

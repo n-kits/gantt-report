@@ -14,6 +14,9 @@
     { key: 'other', label: 'Другое', color: 'var(--an-other)', test: () => true },
   ];
   const productKey = p => PRODUCTS.find(x => x.test(p)).key;
+  // выполненным считается и «На рассмотрении»: исполнитель сдал работу, дата завершения уже есть
+  // (если вернут на доработку — заказ выпадет из «Сроков» до повторной сдачи)
+  const DONE = ['Завершена', 'На рассмотрении'];
 
   // --- даты и формат --------------------------------------------------------
   const nf = new Intl.NumberFormat('ru-RU');
@@ -39,12 +42,13 @@
   }
 
   function prepare(payload) {
-    const places = payload.places || {};
-    Object.values(places).forEach(p => Object.assign(p, placeGroup(p), { area: p.region || p.country || '' }));
+    // копии: исходные данные не трогаем (повторная подготовка тех же данных даёт тот же результат)
+    const places = Object.fromEntries(Object.entries(payload.places || {}).map(([id, p]) =>
+      [id, Object.assign({}, p, placeGroup(p), { area: p.region || p.country || '' })]));
     const tasks = payload.tasks.map(t => {
       const start = t.start ? new Date(t.start) : null, finish = t.finish ? new Date(t.finish) : null;
       const deadline = t.deadline ? new Date(t.deadline) : null;
-      const done = t.status === 'Завершена' && finish;
+      const done = DONE.includes(t.status) && finish;
       const pids = (t.places || []).filter(id => places[id]);
       return Object.assign({}, t, {
         startD: start, finishD: finish, deadlineD: deadline, pkey: productKey(t.product),
