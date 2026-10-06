@@ -358,16 +358,22 @@
     const hours = d3range(-STRIP_H, STRIP_H, 1), halves = d3range(-STRIP_H, STRIP_H, 0.5);
     const labelStep = perHour >= 56 ? 0.5 : perHour >= 22 ? 1 : 2;
     const fmtTick = h => h === 0 ? '0' : (h > 0 ? '+' : '−') + String(Math.abs(h)).replace('.', ',');
-    const chart = Plot.plot({
-      width: W, height: 34 + order.length * 22, marginLeft: ml, marginRight: 8, marginTop: 6,
-      style: { fontFamily: 'inherit', fontSize: '12px', color: 'var(--an-ink-2)', background: 'transparent' },
-      x: { domain: [-STRIP_H - 1.4, STRIP_H + 1.4] },
+    // строки — в своей области; больше MAX_ROWS — она прокручивается, ось часов закреплена под ней
+    // (отдельным графиком с теми же полями и шкалой); в «Днях» область открывается на последних днях
+    const ROW_H = 22, MAX_ROWS = 30, scroll = order.length > MAX_ROWS;
+    const wrap = document.createElement('div');
+    wrap.className = 'an-strips' + (scroll ? ' scroll' : '');
+    if (scroll) wrap.style.maxHeight = (MAX_ROWS * ROW_H + 6) + 'px';
+    el.replaceChildren(wrap);
+    const bodyW = wrap.clientWidth || W;              // без полосы прокрутки, если она есть
+    const style = { fontFamily: 'inherit', fontSize: '12px', color: 'var(--an-ink-2)', background: 'transparent', overflow: 'visible' };
+    const x = { domain: [-STRIP_H - 1.4, STRIP_H + 1.4] };
+    const body = Plot.plot({
+      width: bodyW, height: 6 + order.length * ROW_H, marginLeft: ml, marginRight: 8, marginTop: 6, marginBottom: 0, style,
+      x: Object.assign({ axis: null }, x),
       y: { domain: order, label: null, tickFormat: r => String(r).length > 26 ? String(r).slice(0, 25) + '…' : r },
       marks: [
         Plot.gridX(hours, { stroke: 'var(--an-grid)', strokeOpacity: 1 }),
-        Plot.axisX(halves, { tickFormat: () => '', tickSize: 3, label: null }),
-        Plot.axisX(d3range(-STRIP_H, STRIP_H, labelStep), { tickFormat: fmtTick, tickSize: 6,
-          label: '← раньше срока · часы · позже срока →', labelAnchor: 'center' }),
         Plot.tickX(data, { x: 'x', y: 'row', stroke: 'var(--an-ink)', strokeOpacity: 0.35,
           title: d => `${d.row}
 ${fmtSigned(d.h)}` }),
@@ -380,7 +386,17 @@ ${fmtSigned(d.h)}` }),
         Plot.text(rows.filter(r => r.lo), { x: -STRIP_H - 0.4, y: 'row', text: r => '+' + r.lo, textAnchor: 'end', fill: 'var(--an-early)', fontWeight: 700 }),
       ],
     });
-    el.replaceChildren(chart);
+    const axis = Plot.plot({
+      width: W, height: 40, marginLeft: ml, marginRight: 8 + (W - bodyW), marginTop: 0, marginBottom: 36, style, x,
+      marks: [
+        Plot.axisX(halves, { tickFormat: () => '', tickSize: 3, label: null }),
+        Plot.axisX(d3range(-STRIP_H, STRIP_H, labelStep), { tickFormat: fmtTick, tickSize: 6,
+          label: '← раньше срока · часы · позже срока →', labelAnchor: 'center' }),
+      ],
+    });
+    wrap.appendChild(body);
+    el.appendChild(axis);
+    if (scroll && R === ROWS.day) wrap.scrollTop = wrap.scrollHeight;
   }
   const d3range = (a, b, step) => { const r = []; for (let x = a; x <= b + 1e-9; x += step) r.push(x); return r; };
   const d3group = (a, f) => { const m = new Map(); a.forEach(x => { const k = f(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; };
