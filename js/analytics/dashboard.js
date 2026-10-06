@@ -60,10 +60,27 @@
   }
 
   // --- горизонтальные столбики ----------------------------------------------
+  // ширина подписи в пикселях — тем же шрифтом, что в SVG (12px, шрифт страницы)
+  let measureCtx = null;
+  function textW(el, s) {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = `12px ${getComputedStyle(el).fontFamily}`;
+    return measureCtx.measureText(s).width;
+  }
+  function fitText(el, s, max) {
+    if (textW(el, s) <= max) return s;
+    while (s.length > 1 && textW(el, s + '…') > max) s = s.slice(0, -1);
+    return s.trimEnd() + '…';
+  }
+
   function hbars(el, items, opts) {
     opts = opts || {};
     if (!items.length) { el.innerHTML = '<div class="an-empty">Нет данных за период</div>'; return; }
-    const W = widthOf(el), rowH = 26, bh = 16, labelW = Math.min(opts.labelW || 190, W * 0.46), valW = 44;
+    // колонка подписей — под самую длинную подпись (не меньше opts.labelW), но не больше 46% ширины;
+    // что не влезло — обрезается по ширине текста, полное название — в подсказке
+    const W = widthOf(el), rowH = 26, bh = 16, valW = 44;
+    const longest = Math.max(...items.map(it => textW(el, it.label)));
+    const labelW = Math.min(Math.max(opts.labelW || 190, longest + 14), W * 0.46);
     const H = items.length * rowH + 4;
     const max = Math.max(1, ...items.map(it => it.value));
     const x = v => (W - labelW - valW) * v / max;
@@ -71,7 +88,7 @@
     items.forEach((it, i) => {
       const yy = i * rowH + 4, w = Math.max(1, x(it.value));
       const dim = opts.active && opts.active !== it.key ? ' class="dim"' : '';
-      const label = it.label.length > 30 ? it.label.slice(0, 29) + '…' : it.label;
+      const label = fitText(el, it.label, labelW - 12);
       s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
         `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>` +
         `<text class="val" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
