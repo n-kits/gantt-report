@@ -46,6 +46,7 @@ PROFILE_DIR = APP_DIR / "edge-profile"
 DATA_REPO = APP_DIR / "data-repo"
 LAST_OK_PATH = APP_DIR / "last-ok.json"
 LOCK_PATH = APP_DIR / "collect.lock"
+SCHEDULE_PATH = APP_DIR / "schedule.json"   # когда был последний запуск по расписанию
 LOG_PATH = APP_DIR / "collector.log"
 TASK_NAME = "GanttCollector"
 
@@ -57,6 +58,9 @@ DEFAULTS = {
     "utc_offset_hours": 3,      # время пользователя Bitrix (МСК)
     "interval_min": 30,         # период запуска в Планировщике
     "align_minute": 15,         # запуски с выравниванием: :15, :45 (None — от момента установки)
+    # частота по времени суток: [{"from": "07:00", "to": "23:00", "every_min": 15}, …]; Планировщик запускает
+    # раз в interval_min, сборщик сам пропускает запуски, если по расписанию рано; None — всегда
+    "schedule": None,
     "git_remote": "https://github.com/n-kits/gantt-report.git",
     "data_branch": "data",
     "data_file": "live.json",
@@ -297,8 +301,8 @@ def sync_days(cfg: dict, db, d_from: date, d_to: date, lock: "Lock | None" = Non
                 seen = {t["id"] for t in res.get("tasks", [])}
                 missing = archive.missing(db, days, seen)
                 if missing:
-                    log.warning("Архив: за %s Bitrix не вернул %s задач из архива — оставлены как есть",
-                                ", ".join(days), missing)
+                    log.warning("Архив: за %s Bitrix не вернул %s задач из архива — оставлены как есть: %s",
+                                ", ".join(days), len(missing), ", ".join(missing))
                 done += sorted({archive.workday(r[2], cfg["day_start_hour"]) for r in res["rows"]} & set(days))
                 if lock:
                     lock.touch()
@@ -489,12 +493,43 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def schedule_every(cfg: dict, at: datetime) -> int:
+    """Интервал (мин) по расписанию "schedule" на момент at; вне правил и без расписания — interval_min."""
+    hm = lambda s: int(s[:2]) * 60 + int(s[3:5])
+    m = at.hour * 60 + at.minute
+    for r in cfg.get("schedule") or []:
+        a, b = hm(r["from"]), hm(r["to"])
+        if (a <= m < b) if a < b else (m >= a or m < b):          # правило может переходить через полночь
+            return max(int(r["every_min"]), cfg["interval_min"])
+    return cfg["interval_min"]
+
+
+def schedule_due(cfg: dict, now: datetime) -> bool:
+    """Пора ли запускаться: с прошлого запуска прошёл интервал расписания (запас 3 мин на неровный старт)."""
+    every = schedule_every(cfg, now)
+    if every <= cfg["interval_min"]:
+        return True
+    try:
+        last = datetime.fromisoformat(json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))["last"])
+    except (OSError, ValueError, KeyError):
+        return True
+    return (now - last).total_seconds() / 60 >= every - 3
+
+
+def published_interval(cfg: dict, now: datetime) -> int:
+    """Интервал для сайта (порог «данные не обновлялись»): до следующего запуска — с учётом смены правила,
+    например последний дневной запуск в 22:46, следующий — уже по ночному, через час."""
+    every = schedule_every(cfg, now)
+    return max(every, schedule_every(cfg, now + timedelta(minutes=every)))
+
+
 def run(cfg: dict, dry_run: bool) -> int:
     if not cfg.get("password"):
         log.error("Не задан пароль шифрования — запустите: python collect.py --setup")
         return 2
     last_ok = json.loads(LAST_OK_PATH.read_text(encoding="utf-8")) if LAST_OK_PATH.exists() else None
-    envelope = {"v": 1, "generatedAt": utc_now_iso(), "intervalMin": cfg["interval_min"], "source": cfg["source_name"]}
+    envelope = {"v": 1, "generatedAt": utc_now_iso(), "intervalMin": published_interval(cfg, datetime.now()),
+                "source": cfg["source_name"]}
     code = 0
     try:
         with Lock() as lock:
@@ -830,6 +865,7 @@ def main(argv=None) -> int:
     g.add_argument("--backfill", nargs="+", metavar="ГГГГ-ММ-ДД",
                    help="догрузить рабочие дни из Bitrix в архив и на сайт: С [ПО] (по умолчанию — по сегодня)")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
+    p.add_argument("--force", action="store_true", help="запустить, даже если по расписанию (schedule) ещё рано")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -881,6 +917,12 @@ def main(argv=None) -> int:
     if args.remove_task:
         subprocess.run(["schtasks", "/Delete", "/F", "/TN", TASK_NAME], check=False)
         return 0
+    # Планировщик (без консоли) — по расписанию "schedule"; запуск из консоли и --force — всегда
+    now = datetime.now()
+    console = bool(sys.stdout and sys.stdout.isatty())
+    if not (console or args.force or args.dry_run) and not schedule_due(cfg, now):
+        return 0
+    SCHEDULE_PATH.write_text(json.dumps({"last": now.isoformat(timespec="seconds")}), encoding="utf-8")
     return run(cfg, args.dry_run)
 
 
