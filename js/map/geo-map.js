@@ -117,7 +117,7 @@
             }
           }
           land.addPath(p);
-          paths.set(c.iso, { path: p, name: c.name, bbox: bboxOf(c.polys) });
+          paths.set(c.iso, { path: p, name: c.name, main: bboxOf(mainPolys(c.polys)) });
         }
         basemap = { land, paths };
         if (!userMoved) fit();
@@ -128,6 +128,21 @@
         el.info.textContent = `Не удалось загрузить подложку карты (${e.message}).`;
       });
     return basemapLoading;
+  }
+
+  // «основная часть» страны для подгонки карты: самый большой полигон (по площади внешнего контура) и крупные
+  // полигоны рядом с ним (Хоккайдо и Кюсю у Японии, Аляска у США); далёкие заморские территории (Гвиана у Франции)
+  // и куски за линией перемены дат (Чукотка у России) не берём — иначе рамка растягивается на весь мир
+  function mainPolys(polys) {
+    const info = polys.map(poly => {
+      const r = poly[0];
+      let a = 0;
+      for (let i = 0; i + 3 < r.length; i += 2) a += r[i] * r[i + 3] - r[i + 2] * r[i + 1];
+      const b = bboxOf([poly]);
+      return { poly, a: Math.abs(a) / 2, cx: (b[0] + b[2]) / 2, cy: (b[1] + b[3]) / 2, d: Math.hypot(b[2] - b[0], b[3] - b[1]) };
+    });
+    const m = info.reduce((x, y) => (y.a > x.a ? y : x));
+    return info.filter(x => x === m || (x.a >= 0.05 * m.a && Math.hypot(x.cx - m.cx, x.cy - m.cy) <= 1.5 * m.d)).map(x => x.poly);
   }
 
   function bboxOf(polys) {
@@ -156,15 +171,16 @@
     baseDirty = dirty = true;
   }
 
-  // Показать все точки (страны — только если точек нет); вся карта, если данных нет.
+  // Показать все точки и страны, подсвеченные сегодня (вчерашние и позавчерашние не растягивают кадр);
+  // страна — по её основной части, см. mainPolys; вся карта, если данных нет.
   function fit() {
     let b = null;
     const add = (x0, y0, x1, y1) => {
       b = b ? [Math.min(b[0], x0), Math.min(b[1], y0), Math.max(b[2], x1), Math.max(b[3], y1)] : [x0, y0, x1, y1];
     };
     for (const p of proj) add(p.x, p.y, p.x, p.y);
-    if (!b && basemap) {
-      for (const c of data.countries) { const e = basemap.paths.get(c.iso); if (e) add(...e.bbox); }
+    if (basemap) {
+      for (const c of data.countries) { const e = c.today && basemap.paths.get(c.iso); if (e) add(...e.main); }
     }
     if (!b) {
       k = k0; tx = W / 2; ty = H / 2;
