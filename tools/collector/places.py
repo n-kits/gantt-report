@@ -29,8 +29,10 @@ HERE = Path(__file__).resolve().parent
 ADMIN1 = HERE.parent.parent / "data" / "admin1.json.gz"
 
 # версия правил: сменилась — сборщик один раз пересчитывает регионы и pid в архиве (collect.migrate_places)
-VERSION = 2          # 2 — Киевская область (в Natural Earth была подписана «Киев»)
+VERSION = 3          # 2 — Киевская область (в Natural Earth была подписана «Киев»); 3 — город-субъект как регион = город
 SUSPICIOUS_KM = 30          # одно название дальше этого в одной стране — на проверку
+# в названии субъекта есть такое слово — это не город-субъект («Московская область», «Краснодарский край»)
+REGION_WORD = re.compile(r"(?i)област|край|республик|округ|автономн|губерн|штат|провинц|префектур|земля|кантон|воеводств|графств")
 KIND_LABEL = {"water": "водный объект", "region": "регион", "country": "страна"}
 
 
@@ -105,6 +107,10 @@ def canon(p: dict, gz: Gazetteer | None = None) -> dict:
     if kind == "water":
         # реки и моря тянутся через регионы — место определяет название
         return {"pid": f"water:{name}", "region": "", "country": country, "rcode": code}
+    if kind in ("region", "other") and loc and name == norm(region) and not REGION_WORD.search(region):
+        # город-субъект (Москва, Санкт-Петербург, Севастополь, Киев): LLM иногда называет его регионом —
+        # это то же место, что и город, иначе на графах и в таблицах «две Москвы»
+        return {"pid": f"place:{name}:{code}", "region": region, "country": country, "rcode": code}
     if kind in ("region", "other"):
         # территории и объекты («Урал», «Русская равнина», АЭС): LLM путает region/other и каждый раз
         # ставит центр по-разному — место определяют название и страна
