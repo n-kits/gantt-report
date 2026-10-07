@@ -88,6 +88,8 @@
 | Что сделать | Команда |
 |---|---|
 | Подозрительные пары мест (одно название — разные точки) | `python tools/collector/places.py --check` |
+| Заново поискать в геокодере точки «оценка модели» в архиве (найденное — в архив и Excel, ненайденное — в `geo-unresolved.log`) | `python tools/collector/llm_archive.py regeo` |
+| Места, которые геокодер не нашёл (точка — оценка модели) | `Get-Content $env:LOCALAPPDATA\gantt-collector\geo-unresolved.log -Tail 30` |
 | Страница проверки карты глазами → `in/geo-review.html` | `python tools/collector/geo_review.py` |
 | Варианты отрисовки точек по свежим данным → `in/geo-compare.html` | `python tools/collector/geo_review.py --compare` |
 | Стенд подбора размера точек → `in/geo-sizes.html` | `python tools/collector/geo_review.py --sizes` |
