@@ -132,7 +132,7 @@ _SCHEMA = None
 
 
 REGION_LIST_RULE = "строго одно значение из списка"
-REGION_FREE_RULE = "официальное название субъекта или области"
+REGION_FREE_RULE = "название субъекта или области, как в OpenStreetMap"
 
 
 def system_prompt(region_list: bool = True) -> str:
@@ -301,6 +301,53 @@ class GeoCache:
         return n
 
 
+def query_variants(query: str) -> list[str]:
+    """Запрос к Nominatim и запасной вариант. В OpenStreetMap Донецкая, Луганская, Запорожская, Херсонская области
+    и Крым числятся в Украине, и запрос «…, Россия» по ним ничего не находит (проверено: Егоровка, Червоная
+    Криница, Новогришино находятся без страны в 11–15 км от оценки модели) — повторяем без страны.
+    На принадлежность в отчётах это не влияет: её определяет справочник регионов (places.py).
+    Только для этих областей: без страны Nominatim сопоставляет нестрого и для других регионов находит
+    одноимённое село в соседней стране («Ольховатка, Белгородская область» → Харьковская, 99 км)."""
+    if not query:
+        return []
+    parts = [x.strip() for x in query.split(",")]
+    if len(parts) > 1 and parts[-1].lower() in ("россия", "российская федерация") and \
+            any(w in norm(", ".join(parts[1:-1])) for w in DISPUTED):
+        return [query, ", ".join(parts[:-1])]
+    return [query]
+
+
+# области, которые справочник относит к России, а OpenStreetMap — к Украине (повтор запроса без страны)
+DISPUTED = ("донецк", "луганск", "запорож", "херсон", "крым", "севастопол")
+RETRY_KM = 40      # найденное повтором без страны — не дальше этого от оценки модели (настоящие находки — 11–15 км)
+
+# ДНР и ЛНР в OpenStreetMap — Донецкая и Луганская области; модель без закрытого списка регионов
+# иногда пишет «официальное название субъекта», и такой запрос Nominatim не находит
+OSM_REGIONS = [
+    (re.compile(r"Донецкая\s+Народная\s+Республика|\bДНР\b", re.I), "Донецкая область"),
+    (re.compile(r"Луганская\s+Народная\s+Республика|\bЛНР\b", re.I), "Луганская область"),
+]
+
+
+def osm_region(s: str) -> str:
+    """Названия ДНР и ЛНР → области, как в OpenStreetMap (регион и строка запроса к геокодеру)."""
+    for rx, repl in OSM_REGIONS:
+        s = rx.sub(repl, s)
+    return s
+
+
+def log_unresolved(app_dir: Path, coder: "Geocoder") -> None:
+    """geo-unresolved.log: места, которые геокодер не нашёл (точка — оценка модели), — список для ручной проверки.
+    Строка: дата; название; регион от LLM; запрос к Nominatim; широта; долгота (оценка модели)."""
+    if not coder.unresolved:
+        return
+    today = datetime.now().date().isoformat()
+    with open(app_dir / "geo-unresolved.log", "a", encoding="utf-8") as f:
+        for line in sorted(set(coder.unresolved)):
+            f.write(f"{today}; {line}\n")
+    coder.unresolved.clear()
+
+
 def biz_today() -> str:
     """Рабочий день (сутки с 04:00) сейчас, ГГГГ-ММ-ДД."""
     return (datetime.now() - timedelta(hours=DAY_START_HOUR)).date().isoformat()
@@ -422,10 +469,12 @@ class Geocoder:
             return {"name": name, "kind": "country", "iso": iso, "_src": "basemap"}
 
         est = [t["lat"], t["lon"]] if isinstance(t.get("lat"), (int, float)) and isinstance(t.get("lon"), (int, float)) else None
+        if est and abs(est[0]) < 1e-6 and abs(est[1]) < 1e-6:
+            est = None                                   # (0, 0) — не координаты, а «не знаю» модели («Дивген»)
         tol = TOLERANCE_KM.get(kind, 500)
         ok = lambda c: c and (est is None or km(c, est) <= tol)
         # подсказка геокодеру: регион из закрытого списка (старые ответы — первая часть macro)
-        macro = (t.get("region") or (t.get("macro") or "").split(",")[0]).strip()
+        macro = osm_region((t.get("region") or (t.get("macro") or "").split(",")[0]).strip())
         keys = [f"{name} ({macro})", name] if macro else [name]
 
         # источник: «nominatim» — запрос ушёл в пределах живого окна (подпись держится, пока день в окне;
@@ -433,27 +482,37 @@ class Geocoder:
         # (прошлые запросы сборщика или массовое геокодирование, тоже Nominatim)
         for k in keys:                                   # 1. кэш
             found, c = self.cache.get(k)
-            if found and c and ok(c[:2]):
+            # одноимённых сёл в одной области бывает несколько, а в кэше под «Название (Регион)» — одна точка
+            # (Ольховатка в Харьковской: из кэша — за 99 км, нужная — в 7 км): село из кэша берём, только если оно
+            # рядом с оценкой модели, иначе — ближайший кандидат из ответа Nominatim (шаг 2, обычно тоже из кэша);
+            # то же для записи без региона (массовое геокодирование) при известном регионе
+            close = est is not None and c and km(c[:2], est) <= RETRY_KM
+            near = close or est is None or (kind != "settlement" and (k == keys[0] or not macro))
+            if found and c and near and ok(c[:2]):
                 self.hits += 1
                 fresh = len(c) > 3 and c[2] == "nominatim" and self.fresh_since and c[3] >= self.fresh_since
                 return self._point(name, kind, c[:2], "nominatim" if fresh else "cache")
-        query = (t.get("query") or "").strip()
+        query = osm_region((t.get("query") or "").strip())
         asked = False
-        if query:                                        # 2. Nominatim (ответ, даже пустой, кэшируется)
-            found, cands = self.cache.get(f"@{query}")
+        for n_try, q in enumerate(query_variants(query)):  # 2. Nominatim (ответ, даже пустой, кэшируется)
+            if n_try:                                    # повтор без страны — только близко к оценке модели
+                ok = lambda c: c and est is not None and km(c, est) <= min(tol, RETRY_KM)
+            found, cands = self.cache.get(f"@{q}")
+            now = False
             if not found:
-                cands, asked = self._nominatim(query)
-                if asked:
-                    self.cache.put(f"@{query}", cands)
+                cands, now = self._nominatim(q)
+                if now:
+                    self.cache.put(f"@{q}", cands)
+                    asked = True
             cands = [cands] if cands and isinstance(cands[0], (int, float)) else (cands or [])
             if est and cands:                            # из одноимённых — ближайший к оценке модели
                 cands = sorted(cands, key=lambda c: km(c, est))
             c = cands[0] if cands else None
             if ok(c):
-                self.cache.put(keys[0], c + ["nominatim", biz_today()] if asked else c + ["nominatim"])
-                if not asked:
+                self.cache.put(keys[0], c + ["nominatim", biz_today()] if now else c + ["nominatim"])
+                if not now:
                     self.hits += 1                       # ответ на этот запрос уже был в кэше
-                return self._point(name, kind, c, "nominatim" if asked else "cache")
+                return self._point(name, kind, c, "nominatim" if now else "cache")
         # 3. оценка модели; в журнал — только впервые (когда спрашивали Nominatim в этот раз)
         if asked or not query:
             self.unresolved.append(f"{name}; {macro}; {query}; {est[0] if est else ''}; {est[1] if est else ''}")
@@ -614,10 +673,7 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
     cutoff = (datetime.now() - timedelta(days=KEEP_DAYS)).date().isoformat()
     state["tasks"] = {k: v for k, v in state["tasks"].items() if v.get("seen", today) >= cutoff}
     _save_json(state_path, state)
-    if coder.unresolved:
-        with open(app_dir / "geo-unresolved.log", "a", encoding="utf-8") as f:
-            for line in sorted(set(coder.unresolved)):
-                f.write(f"{today}; {line}\n")
+    log_unresolved(app_dir, coder)
     n = sum(len(i["toponyms"]) for i in items)
     approx = sum(1 for i in items for p in i["toponyms"] if p.get("approx"))
     log.info("Карта: задач с анализом %s из %s, топонимов %s, приблизительных %s",

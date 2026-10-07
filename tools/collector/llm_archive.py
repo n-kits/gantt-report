@@ -309,6 +309,7 @@ def apply(cfg: dict, variant: str, chunk: int) -> int:
                               "sentiment": r.get("sentiment", ""), "model": model, "toponyms": tops})
                 days.add(t["day"])
             cache.save()
+            geo.log_unresolved(collect.APP_DIR, coder)   # ненайденное — в тот же журнал, что у сборщика
             with db:
                 archive.save_analysis(db, items)
         log.info("Разобрано %s из %s, расход пока %s", min(i + chunk, len(pool)), len(pool), cost(usage))
@@ -317,6 +318,62 @@ def apply(cfg: dict, variant: str, chunk: int) -> int:
         archive.export_day(db, cfg, d, archive.archive_dir(cfg))
     db.close()
     log.info("Готово: %s", cost(usage))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 4. Перегеокодирование «оценок модели»
+# ---------------------------------------------------------------------------
+
+def regeo(cfg: dict) -> int:
+    """Архивные точки с координатами «оценка модели» (геокодер тогда не нашёл) — спросить геокодер заново:
+    запрос «название, регион от LLM, страна», а «…, Россия» без ответа — ещё раз без страны (geo.query_variants).
+    Найденное: координаты геокодера, регион и идентификатор места по ним (places.py), Excel затронутых дней.
+    Сеть — без блокировки (на копии кэша), запись в кэш и архив — под общей блокировкой со сборщиком."""
+    import places
+    db = archive.connect(collect.APP_DIR / "archive.sqlite")
+    rows = db.execute("""SELECT p.task_id, p.idx, p.name, p.kind, p.macro, p.country, p.lat, p.lon, t.day
+                         FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE p.src = 'llm'""").fetchall()
+    db.close()
+    cache = geo.GeoCache(collect.APP_DIR / "geocache.json")
+    before = dict(cache.data)
+    coder = geo.Geocoder(cache)
+    found, kept = [], 0
+    for tid, idx, name, kind, macro, country, lat, lon, day in rows:
+        region = (macro or "").split(",")[0].strip()
+        query = ", ".join(x for x in (name, region, country) if x)
+        r = coder.resolve({"name": name, "kind": kind, "region": region, "query": query, "lat": lat, "lon": lon})
+        if r and r.get("_src") in ("cache", "nominatim"):
+            found.append((tid, idx, name, kind, lat, lon, r["lat"], r["lon"], day))
+        else:
+            kept += 1
+    log.info("Перегеокодирование: точек «оценка модели» %s, найдено геокодером %s, осталось %s, запросов к Nominatim %s",
+             len(rows), len(found), kept, coder.asked)
+    gz = places.Gazetteer.get()
+    with wait_lock():                             # кэш координат и архив пишет и сборщик
+        fresh = geo.GeoCache(collect.APP_DIR / "geocache.json")
+        for k, v in cache.data.items():           # новое с этого прогона — поверх свежей копии
+            if before.get(k) != v:
+                fresh.put(k, v)
+        fresh.save()
+        geo.log_unresolved(collect.APP_DIR, coder)
+        db = archive.connect(collect.APP_DIR / "archive.sqlite")
+        try:
+            with db:
+                for tid, idx, name, kind, elat, elon, nlat, nlon, day in found:
+                    c = places.canon({"name": name, "kind": kind, "lat": nlat, "lon": nlon}, gz)
+                    dkm = round(geo.km((nlat, nlon), (elat, elon))) if isinstance(elat, (int, float)) else None
+                    db.execute("""UPDATE toponyms SET lat = ?, lon = ?, src = 'cache', dkm = ?, approx = 0,
+                                  region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?""",
+                               (nlat, nlon, dkm, c["region"], c["country"], c["pid"], tid, idx))
+            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
+            days = sorted({f[-1] for f in found} & exported)
+            for d in days:                        # в Excel — новые координаты и регионы
+                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
+        finally:
+            db.close()
+    for f in found:
+        log.info("  %s (%s): %.3f, %.3f → %.3f, %.3f", f[2], f[0], f[4] or 0, f[5] or 0, f[6], f[7])
     return 0
 
 
@@ -330,6 +387,7 @@ def main() -> int:
     a = sub.add_parser("apply")
     a.add_argument("--variant", choices=["A", "B"], required=True)
     a.add_argument("--chunk", type=int, default=40)
+    sub.add_parser("regeo", help="перегеокодировать точки «оценка модели» в архиве")
     args = p.parse_args()
     collect.setup_logging(True)
     cfg = collect.load_config()
@@ -337,6 +395,8 @@ def main() -> int:
         return fetch(cfg)
     if args.cmd == "test":
         return test(cfg, args.n, args.noise)
+    if args.cmd == "regeo":
+        return regeo(cfg)
     return apply(cfg, args.variant, args.chunk)
 
 
