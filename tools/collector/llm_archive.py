@@ -329,8 +329,8 @@ def regeo(cfg: dict) -> int:
     """Архивные точки с координатами «оценка модели» (геокодер тогда не нашёл) — спросить геокодер заново:
     запрос «название, регион от LLM, страна», а «…, Россия» без ответа — ещё раз без страны (geo.query_variants).
     Найденное: координаты геокодера, регион и идентификатор места по ним (places.py), Excel затронутых дней.
+    Места из geo-manual.csv пропускаются (правки переносит команда manual, «проверено» — не трогаем).
     Сеть — без блокировки (на копии кэша), запись в кэш и архив — под общей блокировкой со сборщиком."""
-    import places
     db = archive.connect(collect.APP_DIR / "archive.sqlite")
     rows = db.execute("""SELECT p.task_id, p.idx, p.name, p.kind, p.macro, p.country, p.lat, p.lon, t.day
                          FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE p.src = 'llm'""").fetchall()
@@ -339,17 +339,17 @@ def regeo(cfg: dict) -> int:
     before = dict(cache.data)
     coder = geo.Geocoder(cache)
     found, kept = [], 0
+    rows = [r for r in rows if not coder.manual.checked(r[2], (r[4] or "").split(",")[0])]
     for tid, idx, name, kind, macro, country, lat, lon, day in rows:
         region = (macro or "").split(",")[0].strip()
         query = ", ".join(x for x in (name, region, country) if x)
         r = coder.resolve({"name": name, "kind": kind, "region": region, "query": query, "lat": lat, "lon": lon})
         if r and r.get("_src") in ("cache", "nominatim"):
-            found.append((tid, idx, name, kind, lat, lon, r["lat"], r["lon"], day))
+            found.append((tid, idx, name, kind, lat, lon, r["lat"], r["lon"], day, "cache"))
         else:
             kept += 1
     log.info("Перегеокодирование: точек «оценка модели» %s, найдено геокодером %s, осталось %s, запросов к Nominatim %s",
              len(rows), len(found), kept, coder.asked)
-    gz = places.Gazetteer.get()
     with wait_lock():                             # кэш координат и архив пишет и сборщик
         fresh = geo.GeoCache(collect.APP_DIR / "geocache.json")
         for k, v in cache.data.items():           # новое с этого прогона — поверх свежей копии
@@ -357,23 +357,60 @@ def regeo(cfg: dict) -> int:
                 fresh.put(k, v)
         fresh.save()
         geo.log_unresolved(collect.APP_DIR, coder)
-        db = archive.connect(collect.APP_DIR / "archive.sqlite")
-        try:
-            with db:
-                for tid, idx, name, kind, elat, elon, nlat, nlon, day in found:
-                    c = places.canon({"name": name, "kind": kind, "lat": nlat, "lon": nlon}, gz)
-                    dkm = round(geo.km((nlat, nlon), (elat, elon))) if isinstance(elat, (int, float)) else None
-                    db.execute("""UPDATE toponyms SET lat = ?, lon = ?, src = 'cache', dkm = ?, approx = 0,
-                                  region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?""",
-                               (nlat, nlon, dkm, c["region"], c["country"], c["pid"], tid, idx))
-            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-            days = sorted({f[-1] for f in found} & exported)
-            for d in days:                        # в Excel — новые координаты и регионы
-                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
-        finally:
-            db.close()
+        _move_points(cfg, found)
+    return 0
+
+
+def _move_points(cfg: dict, found: list) -> None:
+    """found: [(task_id, idx, name, kind, lat, lon модели, новые lat, lon, день, источник)] → архив: координаты,
+    расхождение с оценкой модели, регион, страна и идентификатор места по ним (places.py); Excel затронутых дней.
+    Вызывать под wait_lock()."""
+    gz = places.Gazetteer.get()
+    db = archive.connect(collect.APP_DIR / "archive.sqlite")
+    try:
+        with db:
+            for tid, idx, name, kind, elat, elon, nlat, nlon, day, src in found:
+                c = places.canon({"name": name, "kind": kind, "lat": nlat, "lon": nlon}, gz)
+                dkm = round(geo.km((nlat, nlon), (elat, elon))) if isinstance(elat, (int, float)) else None
+                db.execute("""UPDATE toponyms SET lat = ?, lon = ?, src = ?, dkm = ?, approx = 0,
+                              region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?""",
+                           (nlat, nlon, src, dkm, c["region"], c["country"], c["pid"], tid, idx))
+        exported = {d for (d,) in db.execute("SELECT day FROM exports")}
+        for d in sorted({f[8] for f in found} & exported):   # в Excel — новые координаты и регионы
+            archive.export_day(db, cfg, d, archive.archive_dir(cfg))
+    finally:
+        db.close()
     for f in found:
         log.info("  %s (%s): %.3f, %.3f → %.3f, %.3f", f[2], f[0], f[4] or 0, f[5] or 0, f[6], f[7])
+
+
+# ---------------------------------------------------------------------------
+# 5. Ручные правки мест (geo-manual.csv)
+# ---------------------------------------------------------------------------
+
+def manual(cfg: dict) -> int:
+    """Координаты из geo-manual.csv — во все архивные точки с тем же названием и регионом модели
+    (строка без региона — для любого). Живое окно правки подхватывает само: сборщик геокодирует его каждый запуск."""
+    m = geo.Manual(collect.APP_DIR / geo.MANUAL_NAME)
+    m.ensure()
+    if not m.points:
+        log.info("Ручных правок нет: %s", m.path)
+        return 0
+    with wait_lock():
+        db = archive.connect(collect.APP_DIR / "archive.sqlite")
+        rows = db.execute("""SELECT p.task_id, p.idx, p.name, p.kind, p.macro, p.lat, p.lon, p.src, p.dkm, t.day
+                             FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE p.lat IS NOT NULL""").fetchall()
+        db.close()
+        found = []
+        for tid, idx, name, kind, macro, lat, lon, src, dkm, day in rows:
+            c = m.get(name, (macro or "").split(",")[0])
+            if not c or (src == "manual" and [lat, lon] == c):
+                continue
+            # расхождение с оценкой модели — только если старая точка и была оценкой (у точек геокодера
+            # её в архиве нет); иначе «км» пусто
+            found.append((tid, idx, name, kind, lat if src == "llm" else None, lon, c[0], c[1], day, "manual"))
+        log.info("Ручные правки: мест в файле %s, точек в архиве изменено %s", len(m.points), len(found))
+        _move_points(cfg, found)
     return 0
 
 
@@ -388,6 +425,7 @@ def main() -> int:
     a.add_argument("--variant", choices=["A", "B"], required=True)
     a.add_argument("--chunk", type=int, default=40)
     sub.add_parser("regeo", help="перегеокодировать точки «оценка модели» в архиве")
+    sub.add_parser("manual", help="перенести ручные правки мест (geo-manual.csv) в архив")
     args = p.parse_args()
     collect.setup_logging(True)
     cfg = collect.load_config()
@@ -397,6 +435,8 @@ def main() -> int:
         return test(cfg, args.n, args.noise)
     if args.cmd == "regeo":
         return regeo(cfg)
+    if args.cmd == "manual":
+        return manual(cfg)
     return apply(cfg, args.variant, args.chunk)
 
 

@@ -129,32 +129,44 @@ def region_enum(gz: Gazetteer | None = None) -> list[str]:
 
 def suspicious(rows) -> list[dict]:
     """
-    rows: [(pid, name, kind, country, region, lat, lon, task_id)] → пары «одно название — разные места»
+    rows: [(pid, name, kind, country, region, lat, lon, task_id[, checked])] → пары «одно название — разные места»
     в одной стране дальше SUSPICIOUS_KM (две деревни или ошибка LLM / геокодера).
+    checked — место проверено вручную (geo-manual.csv); пара из двух проверенных мест не подозрительна.
     """
     groups = defaultdict(dict)                      # (имя, класс, страна) → {pid: {...}}
-    for pid, name, kind, country, region, lat, lon, tid in rows:
+    for pid, name, kind, country, region, lat, lon, tid, *flag in rows:
         if kind in ("country", "water") or not isinstance(lat, (int, float)):
             continue
         g = groups[(norm(name), "area" if kind in ("region", "other") else "place", country or "")]
         e = g.setdefault(pid, {"pid": pid, "name": name, "region": region, "lat": lat, "lon": lon, "tasks": set()})
         e["tasks"].add(tid)
+        e["checked"] = e.get("checked") or bool(flag and flag[0])
     out = []
     for (_, _, country), places in groups.items():
         ps = list(places.values())
         for i in range(len(ps)):
             for j in range(i + 1, len(ps)):
                 d = km((ps[i]["lat"], ps[i]["lon"]), (ps[j]["lat"], ps[j]["lon"]))
-                if d > SUSPICIOUS_KM:
+                if d > SUSPICIOUS_KM and not (ps[i]["checked"] and ps[j]["checked"]):
                     out.append({"name": ps[i]["name"], "country": country, "km": round(d), "a": ps[i], "b": ps[j]})
     return sorted(out, key=lambda x: -x["km"])
+
+
+def archive_rows(db, app_dir: Path) -> list:
+    """Строки архива для suspicious(): с отметкой «проверено» (источник «вручную» или место в geo-manual.csv)."""
+    import geo
+    manual = geo.Manual(Path(app_dir) / geo.MANUAL_NAME)
+    rows = db.execute("SELECT pid, name, kind, country, region, lat, lon, task_id, src, macro "
+                      "FROM toponyms WHERE pid IS NOT NULL").fetchall()
+    return [r[:8] + (r[8] == "manual" or manual.checked(r[1], (r[9] or "").split(",")[0]),) for r in rows]
 
 
 def _check() -> int:
     import os
     import archive
-    db = archive.connect(Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector" / "archive.sqlite")
-    rows = db.execute("SELECT pid, name, kind, country, region, lat, lon, task_id FROM toponyms WHERE pid IS NOT NULL").fetchall()
+    app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "gantt-collector"
+    db = archive.connect(app_dir / "archive.sqlite")
+    rows = archive_rows(db, app_dir)
     if not rows:
         print("В архиве ещё нет регионов по координатам — их посчитает следующий запуск сборщика (collect.py)")
         return 0

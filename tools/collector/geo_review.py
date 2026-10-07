@@ -40,7 +40,7 @@ VARIANTS = [
                        "<b style=color:#16A34A>сегодня</b>, <b style=color:#8A919C>вчера</b>, <b style=color:#A9B0B9>позавчера</b>."),
 ]
 
-SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны"}
+SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны", "manual": "вручную"}
 
 STYLES = [
     ("--map-sea", "море и фон за картой"),
@@ -83,7 +83,7 @@ def suspicious_html() -> str:
         return '<p class="sub">Архива нет.</p>'
     db = sqlite3.connect(db_path)
     try:
-        rows = db.execute("SELECT pid, name, kind, country, region, lat, lon, task_id FROM toponyms WHERE pid IS NOT NULL").fetchall()
+        rows = places.archive_rows(db, SRC.parent)
     except sqlite3.OperationalError:
         return '<p class="sub">В архиве ещё нет регионов по координатам — запустите сборщик.</p>'
     finally:
@@ -180,7 +180,8 @@ def main():
   <h2 class="geo-h2">Задачи и топонимы</h2>
   <p class="legend geo-src-legend">Источник координат:
     <span class="src cache">кэш</span> <span class="src nominatim">Nominatim</span>
-    <span class="src basemap">полигон страны</span> <span class="src llm">оценка модели</span> (не подтверждено геокодером).
+    <span class="src basemap">полигон страны</span> <span class="src manual">вручную</span>
+    <span class="src llm">оценка модели</span> (не подтверждено геокодером).
     «км» — насколько найденная точка отстоит от оценки модели; красным — больше 50 км.
   </p>
   <div id="geo-table" class="geo-table"></div>

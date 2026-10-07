@@ -9,7 +9,7 @@
   const G = root.GanttGeo;
   const SORT_KEY = 'gantt-geo.sort';
   const OPEN_KEY = 'gantt-geo.table-open';   // '1' — развёрнута; по умолчанию свёрнута
-  const SRC_LABEL = { cache: 'кэш', nominatim: 'Nominatim', llm: 'оценка модели', basemap: 'полигон страны' };
+  const SRC_LABEL = { cache: 'кэш', nominatim: 'Nominatim', llm: 'оценка модели', basemap: 'полигон страны', manual: 'вручную' };
   const FAR_KM = 50;
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => (

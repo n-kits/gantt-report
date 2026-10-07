@@ -166,7 +166,7 @@ TASK_HEADERS = ["ID", "Рабочий день", "Регистрация", "За
                 "Тема", "Конфликт", "Тональность", "Топонимы", "Описание", "Модель", "Последнее обновление", "Ссылка"]
 TOP_HEADERS = ["ID", "Задача", "Топоним", "Тип", "Регион", "Страна", "Регион по версии LLM", "Страна (ISO)",
                "Широта", "Долгота", "Источник координат", "Расхождение с оценкой, км", "Приблизительно"]
-SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны"}
+SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны", "manual": "вручную"}
 
 
 def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, record: bool = True) -> Path | None:

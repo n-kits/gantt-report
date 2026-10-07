@@ -301,6 +301,61 @@ class GeoCache:
         return n
 
 
+MANUAL_NAME = "geo-manual.csv"
+MANUAL_HEADER = "название;регион;широта;долгота;примечание"
+
+
+class Manual:
+    """
+    Ручные правки мест — локальный geo-manual.csv рядом с кэшем (в репозиторий не попадает), «;», UTF-8.
+    Строка: название; регион (как у модели, можно пусто — тогда для любого региона); широта; долгота; примечание.
+    С координатами — точка вместо кэша, Nominatim и оценки модели (источник «вручную»); без координат —
+    отметка «проверено»: точка как есть, её не трогает перегеокодирование и нет в подозрительных парах.
+    Координаты — числами с точкой или запятой, можно обе в одной ячейке («48.6, 37.6» из Яндекс Карт).
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.points: dict = {}              # (название, регион) → [lat, lon] | None (только «проверено»)
+        if not path.exists():
+            return
+        import csv
+        for row in csv.reader(path.read_text(encoding="utf-8-sig").splitlines(), delimiter=";"):
+            row = [x.strip() for x in row] + [""] * 4
+            if not row[0] or row[0].startswith("#") or norm(row[0]) == "название":
+                continue
+            self.points[(norm(row[0]), norm(osm_region(row[1])))] = self._coords(row[2], row[3])
+
+    @staticmethod
+    def _coords(a: str, b: str):
+        if not b and a.count(",") == 1 and "." in a:                  # «48.6, 37.6» в одной ячейке
+            a, b = a.split(",")
+        try:
+            c = [float(a.replace(",", ".")), float(b.replace(",", "."))]
+        except ValueError:
+            return None
+        return c if -90 <= c[0] <= 90 and -180 <= c[1] <= 180 else None
+
+    def _find(self, name: str, region: str):
+        for k in ((norm(name), norm(osm_region(region or ""))), (norm(name), "")):
+            if k in self.points:
+                return True, self.points[k]
+        return False, None
+
+    def get(self, name: str, region: str):
+        """Координаты, заданные вручную, или None."""
+        return self._find(name, region)[1]
+
+    def checked(self, name: str, region: str) -> bool:
+        """Место есть в файле — с координатами или с отметкой «проверено»."""
+        return self._find(name, region)[0]
+
+    def ensure(self) -> None:
+        """Пустой файл с заголовком — чтобы было что открыть и заполнить."""
+        if not self.path.exists():
+            self.path.write_text(MANUAL_HEADER + "\n", encoding="utf-8-sig")
+
+
 def query_variants(query: str) -> list[str]:
     """Запрос к Nominatim и запасной вариант. В OpenStreetMap Донецкая, Луганская, Запорожская, Херсонская области
     и Крым числятся в Украине, и запрос «…, Россия» по ним ничего не находит (проверено: Егоровка, Червоная
@@ -434,6 +489,7 @@ class Geocoder:
         с него, подписывается «nominatim» до выпадения её дня из окна; всё более раннее — «cache»."""
         self.cache = cache
         self.fresh_since = fresh_since
+        self.manual = Manual(Path(cache.path).parent / MANUAL_NAME)
         self._nom = None
         self._last = 0.0
         self.countries = {c["iso"] for c in _load_json(BASEMAP_PATH, {}).get("countries", [])}
@@ -476,6 +532,9 @@ class Geocoder:
         # подсказка геокодеру: регион из закрытого списка (старые ответы — первая часть macro)
         macro = osm_region((t.get("region") or (t.get("macro") or "").split(",")[0]).strip())
         keys = [f"{name} ({macro})", name] if macro else [name]
+        c = self.manual.get(name, macro)                 # 0. ручная правка — главнее всего
+        if c:
+            return self._point(name, kind, c, "manual")
 
         # источник: «nominatim» — запрос ушёл в пределах живого окна (подпись держится, пока день в окне;
         # при выпадении архив меняет её на «cache» — archive.settle_sources); «cache» — точка была раньше

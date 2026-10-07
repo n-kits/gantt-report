@@ -373,3 +373,4 @@ table.geo-tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; backg
 .src.nominatim { background: #DBE7F5; }
 .src.llm { background: #F3C6C0; }
 .src.basemap { background: #EDE3D1; }
+.src.manual { background: #E4DCF2; }
