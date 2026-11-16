@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Локальный архив задач: всё, что сборщик видел, копится в SQLite на домашнем ПК,
-а каждый день, выпавший из трёхдневного окна, выгружается в Excel-файл.
+Локальный архив задач: всё, что сборщик видел, копится в SQLite на домашнем ПК.
 
     archive.sqlite   — база (%LOCALAPPDATA%\\gantt-collector): задачи, анализ, топонимы
-    <archive_dir>\\ГГГГ-ММ-ДД.xlsx — рабочий день (с 04:00 до 04:00), листы «Задачи» и «Топонимы»
+    backups\\        — еженедельные копии базы (collect.backup_archive)
+    Excel за день или период — только по запросу: collect.py --export ГГГГ-ММ-ДД [ГГГГ-ММ-ДД]
 
 Каждый запуск обновляет задачи окна (статус, завершение, выполнение…); раз в сутки
 и по --backfill перечитываются и закрытые дни — в архиве текущие статусы из Bitrix.
@@ -41,9 +41,7 @@ CREATE TABLE IF NOT EXISTS toponyms (
   src TEXT, dkm INTEGER, approx INTEGER,
   PRIMARY KEY (task_id, idx)
 );
-CREATE TABLE IF NOT EXISTS exports (
-  day TEXT PRIMARY KEY, file TEXT, tasks INTEGER, exported_at TEXT
-);
+DROP TABLE IF EXISTS exports;   -- учёт ежедневных Excel-выгрузок (до 11.2026); выгрузка теперь по запросу
 """
 
 TASK_COLS = ["name", "status", "start", "finish", "executor", "deadline", "project", "product", "works"]
@@ -158,7 +156,7 @@ def day_rows(db: sqlite3.Connection, day: str) -> list[list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Выгрузка дня в Excel
+# Выгрузка в Excel (по запросу)
 # ---------------------------------------------------------------------------
 
 TASK_HEADERS = ["ID", "Рабочий день", "Регистрация", "Задача", "Статус", "Завершение", "Исполнитель",
@@ -169,8 +167,9 @@ TOP_HEADERS = ["ID", "Задача", "Топоним", "Тип", "Регион",
 SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны", "manual": "вручную"}
 
 
-def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, record: bool = True) -> Path | None:
-    """record=False — выгрузка вручную: день не помечается выгруженным (автовыгрузка потом перезапишет файл)."""
+def export(db: sqlite3.Connection, cfg: dict, d_from: str, d_to: str, path: Path) -> Path | None:
+    """Задачи рабочих дней d_from…d_to (ГГГГ-ММ-ДД) → один Excel-файл: листы «Задачи» и «Топонимы».
+    Только по запросу (collect.py --export): архив — в SQLite, Excel из него всегда собирается заново."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
 
@@ -180,14 +179,14 @@ def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, recor
                   (SELECT group_concat(name, ', ') FROM (SELECT name FROM toponyms WHERE task_id = t.id ORDER BY idx)),
                   t.description, a.model, t.last_seen, t.url
            FROM tasks t LEFT JOIN analysis a ON a.task_id = t.id
-           WHERE t.day = ? ORDER BY t.start""", (day,)).fetchall()
+           WHERE t.day BETWEEN ? AND ? ORDER BY t.start""", (d_from, d_to)).fetchall()
     if not tasks:
         return None
     tasks = sorted(tasks, key=lambda r: parse_dt(r[2]) or datetime.min)
     base = cfg.get("bitrix_base", "https://crm.emg24.ru")
     tops = db.execute(
         """SELECT p.task_id, t.name, p.name, p.kind, p.region, p.country, p.macro, p.iso, p.lat, p.lon, p.src, p.dkm, p.approx
-           FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE t.day = ? ORDER BY t.start, p.idx""", (day,)).fetchall()
+           FROM toponyms p JOIN tasks t ON t.id = p.task_id WHERE t.day BETWEEN ? AND ? ORDER BY t.start, p.idx""", (d_from, d_to)).fetchall()
 
     wb = Workbook()
     head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="0F2C3A")
@@ -216,44 +215,24 @@ def export_day(db: sqlite3.Connection, cfg: dict, day: str, out_dir: Path, recor
           [list(r[:10]) + [SRC_LABEL.get(r[10], r[10]), r[11], "да" if r[12] else ""] for r in tops],
           [10, 50, 28, 11, 30, 16, 30, 12, 10, 10, 18, 14, 14])
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{day}.xlsx"
+    path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
-    if not record:
-        return path
-    with db:
-        db.execute("""INSERT INTO exports (day, file, tasks, exported_at) VALUES (?, ?, ?, ?)
-                      ON CONFLICT(day) DO UPDATE SET file=excluded.file, tasks=excluded.tasks,
-                        exported_at=excluded.exported_at""",
-                   (day, str(path), len(tasks), datetime.now().isoformat(timespec="seconds")))
-    log.info("Архив: день %s → %s (задач %s)", day, path, len(tasks))
+    log.info("Архив: %s — %s → %s (задач %s)", d_from, d_to, path, len(tasks))
     return path
 
 
 def settle_sources(db: sqlite3.Connection, first_open: str) -> int:
     """Дни вне живого окна: источник точек «nominatim» → «cache». «nominatim» держится, пока день в окне
-    (запрос к геокодеру был в эти три дня, geo.Geocoder); в архиве и Excel закрытых дней — уже кэш."""
+    (запрос к геокодеру был в эти три дня, geo.Geocoder); в архиве закрытых дней — уже кэш."""
     n = db.execute("""UPDATE toponyms SET src = 'cache' WHERE src = 'nominatim'
                       AND task_id IN (SELECT id FROM tasks WHERE day < ?)""", (first_open,)).rowcount
     db.commit()
     return n
 
 
-def export_closed(db: sqlite3.Connection, cfg: dict, window_from: datetime, out_dir: Path) -> list[Path]:
-    """Выгрузить дни, целиком выпавшие из окна и ещё не выгруженные."""
-    first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
-    settle_sources(db, first_open)
-    days = [d for (d,) in db.execute(
-        "SELECT DISTINCT day FROM tasks WHERE day < ? AND day NOT IN (SELECT day FROM exports) ORDER BY day",
-        (first_open,))]
-    return [p for p in (export_day(db, cfg, d, out_dir) for d in days) if p]
-
-
-def reexport(db: sqlite3.Connection, cfg: dict, days: list[str], window_from: datetime, out_dir: Path) -> list[Path]:
-    """Перечитанные из Bitrix закрытые дни — выгрузить заново (в Excel — текущие статусы)."""
-    first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
-    settle_sources(db, first_open)
-    return [p for p in (export_day(db, cfg, d, out_dir) for d in sorted(set(days)) if d < first_open) if p]
+def settle(db: sqlite3.Connection, cfg: dict, window_from: datetime) -> int:
+    """Дни, выпавшие из живого окна: источник точек «nominatim» → «cache» (см. settle_sources)."""
+    return settle_sources(db, (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat())
 
 
 def archive_dir(cfg: dict) -> Path:

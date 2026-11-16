@@ -4,7 +4,7 @@
 Ручной разбор мест: подозрительные пары (одно название — разные точки) и точки «оценка модели».
 Локальная страница на подложке OpenStreetMap: «Верно» — отметка «проверено», клик по карте или вставка
 «широта, долгота» — свои координаты. «Сохранить» дописывает строки в geo-manual.csv и переносит правки
-в архив и Excel (llm_archive.py manual); живое окно сборщик подхватит сам.
+в архив (llm_archive.py manual); живое окно сборщик подхватит сам.
 
     python tools/collector/geo_manual.py              # http://127.0.0.1:8766/ — откроется в браузере
     python tools/collector/geo_manual.py --no-browser
@@ -123,7 +123,7 @@ def clean(s) -> str:
 
 def save_rows(rows: list) -> dict:
     """[[название, регион, широта, долгота, примечание]] → в конец geo-manual.csv (поздняя строка главнее),
-    затем правки — в архив и Excel."""
+    затем правки — в архив."""
     m = geo.Manual(collect.APP_DIR / geo.MANUAL_NAME)
     m.ensure()
     lines = []

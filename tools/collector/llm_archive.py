@@ -288,7 +288,6 @@ def apply(cfg: dict, variant: str, chunk: int) -> int:
     pool = [t for t in todo(db) if t["id"] in set(st["fetched"])]
     log.info("Разобрать: %s задач, из теста берём %s", len(pool), len([t for t in pool if t["id"] in reuse]))
     usage: list = []
-    days = set()
     model = cfg.get("llm_model")
     for i in range(0, len(pool), chunk):
         part = pool[i:i + chunk]
@@ -307,15 +306,11 @@ def apply(cfg: dict, variant: str, chunk: int) -> int:
                 tops = [p for p in (geo.published(x, coder.resolve(x)) for x in r.get("toponyms", [])) if p]
                 items.append({"id": t["id"], "themes": r.get("themes", []), "conflict": r.get("conflict", ""),
                               "sentiment": r.get("sentiment", ""), "model": model, "toponyms": tops})
-                days.add(t["day"])
             cache.save()
             geo.log_unresolved(collect.APP_DIR, coder)   # ненайденное — в тот же журнал, что у сборщика
             with db:
                 archive.save_analysis(db, items)
         log.info("Разобрано %s из %s, расход пока %s", min(i + chunk, len(pool)), len(pool), cost(usage))
-    exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-    for d in sorted(days & exported):             # в Excel — темы и топонимы
-        archive.export_day(db, cfg, d, archive.archive_dir(cfg))
     db.close()
     log.info("Готово: %s", cost(usage))
     return 0
@@ -328,7 +323,7 @@ def apply(cfg: dict, variant: str, chunk: int) -> int:
 def regeo(cfg: dict) -> int:
     """Архивные точки с координатами «оценка модели» (геокодер тогда не нашёл) — спросить геокодер заново:
     запрос «название, регион от LLM, страна», а «…, Россия» без ответа — ещё раз без страны (geo.query_variants).
-    Найденное: координаты геокодера, регион и идентификатор места по ним (places.py), Excel затронутых дней.
+    Найденное: координаты геокодера, регион и идентификатор места по ним (places.py).
     Места из geo-manual.csv пропускаются (правки переносит команда manual, «проверено» — не трогаем).
     Сеть — без блокировки (на копии кэша), запись в кэш и архив — под общей блокировкой со сборщиком."""
     db = archive.connect(collect.APP_DIR / "archive.sqlite")
@@ -363,7 +358,7 @@ def regeo(cfg: dict) -> int:
 
 def _move_points(cfg: dict, found: list) -> None:
     """found: [(task_id, idx, name, kind, lat, lon модели, новые lat, lon, день, источник)] → архив: координаты,
-    расхождение с оценкой модели, регион, страна и идентификатор места по ним (places.py); Excel затронутых дней.
+    расхождение с оценкой модели, регион, страна и идентификатор места по ним (places.py).
     Вызывать под wait_lock()."""
     gz = places.Gazetteer.get()
     db = archive.connect(collect.APP_DIR / "archive.sqlite")
@@ -375,9 +370,6 @@ def _move_points(cfg: dict, found: list) -> None:
                 db.execute("""UPDATE toponyms SET lat = ?, lon = ?, src = ?, dkm = ?, approx = 0,
                               region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?""",
                            (nlat, nlon, src, dkm, c["region"], c["country"], c["pid"], tid, idx))
-        exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-        for d in sorted({f[8] for f in found} & exported):   # в Excel — новые координаты и регионы
-            archive.export_day(db, cfg, d, archive.archive_dir(cfg))
     finally:
         db.close()
     for f in found:
@@ -417,7 +409,7 @@ def manual(cfg: dict) -> int:
 
 
 def _not_places(cfg: dict, m: "geo.Manual") -> None:
-    """«Не топоним» из geo-manual.csv: строки архива — в toponyms_removed (не на карте, не в аналитике и Excel);
+    """«Не топоним» из geo-manual.csv: строки архива — в toponyms_removed (не на карте и не в аналитике);
     отметку из файла убрали — строка возвращается в конец топонимов задачи. Вызывать под wait_lock()."""
     db = archive.connect(collect.APP_DIR / "archive.sqlite")
     try:
@@ -442,11 +434,6 @@ def _not_places(cfg: dict, m: "geo.Manual") -> None:
                 db.execute("DELETE FROM toponyms_removed WHERE task_id = ? AND idx = ?", (tid, idx))
         if gone or back:
             log.info("Не топонимы: убрано из архива %s, возвращено %s", len(gone), len(back))
-            tids = sorted({r[0] for r in gone + back})
-            days = {d for (d,) in db.execute(f"SELECT day FROM tasks WHERE id IN ({','.join('?' * len(tids))})", tids)}
-            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-            for d in sorted(days & exported):
-                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
     finally:
         db.close()
 

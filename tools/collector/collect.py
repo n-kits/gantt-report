@@ -11,7 +11,7 @@
     python collect.py --install-task   # зарегистрировать задачу в Планировщике Windows
     python collect.py --remove-task    # удалить задачу
     python collect.py --import-geocache in/analyze_geocode/geocache.geojson   # заполнить кэш координат
-    python collect.py --export-day 2026-09-27   # выгрузить день из локального архива в Excel вручную
+    python collect.py --export 2026-09-27 [2026-09-30]   # день или период из архива — в Excel
     python collect.py --llm off|on|status       # «стоп» для LLM: лента строится, новые задачи не анализируются
     python collect.py --backfill 2026-01-01 [2026-09-30]   # догрузить дни из Bitrix в архив (календарик на сайте)
 
@@ -74,11 +74,14 @@ DEFAULTS = {
     "llm_region_list": False,   # регион в ответе LLM — свободная строка (A/B 10.2026: качество как со списком, запрос вдвое дешевле)
     "llm_cache_ttl": None,      # кэш промпта: None — нет (запросы раз в 15+ мин по 1 заказу), «5m» / «1h»
     "geo_fetch_limit": 60,      # не больше стольких страниц задач за запуск
-    "archive": True,            # локальный архив задач (archive.sqlite) и выгрузка выпавших дней в Excel
-    "archive_dir": None,        # куда класть ГГГГ-ММ-ДД.xlsx; None — Документы\Лента времени — архив
+    "archive": True,            # локальный архив задач (archive.sqlite)
+    "archive_dir": None,        # куда класть Excel по --export; None — Документы\Лента времени — архив
+    "backup_days": 7,           # копия archive.sqlite раз в столько дней; 0 — не делать
+    "backup_keep": 8,           # сколько последних копий хранить
+    "backup_dir": None,         # куда; None — %LOCALAPPDATA%\gantt-collector\backups
     "publish_days": True,       # архив по дням в ветку data (days/ГГГГ-ММ-ДД.json, зашифровано) — календарик на сайте
     "publish_analytics": True,  # вкладка «Аналитика»: весь архив одним файлом (analytics.json, gzip + шифрование)
-    "refresh_days": 14,         # раз в сутки перечитывать столько закрытых дней: на сайте и в Excel — текущие статусы
+    "refresh_days": 14,         # раз в сутки перечитывать столько закрытых дней: на сайте — текущие статусы
     "history_url": None,        # пресет Bitrix для --backfill и обновления, без ограничения по давности; None — tasks_url
     "chunk_days": 3,            # --backfill и обновление ходят в Bitrix кусками по столько суток
     "chunk_pause_sec": 3,       # пауза между кусками
@@ -276,8 +279,8 @@ def drop_forgotten(res: dict) -> None:
 
 def forget(cfg: dict, ids: list[str], undo: bool = False) -> int:
     """Удалить задачи из архива полностью и больше не собирать (undo — вернуть в сбор).
-    Удаляется: архив (задача, анализ, топонимы), очередь анализа; Excel дня и архив дней на сайте
-    переписываются, аналитика пересчитывается. Живая лента — со следующего запуска сборщика."""
+    Удаляется: архив (задача, анализ, топонимы), очередь анализа; архив дней на сайте
+    переписывается, аналитика пересчитывается. Живая лента — со следующего запуска сборщика."""
     import archive
     import geo
     ids = [i.strip() for i in ids if i.strip()]
@@ -311,17 +314,6 @@ def forget(cfg: dict, ids: list[str], undo: bool = False) -> int:
                 if any(state["tasks"].pop(i, None) is not None for i in ids):
                     geo._save_json(APP_DIR / "geo-state.json", state)
 
-                window_from, _ = date_range(cfg, bitrix_now(cfg))
-                first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
-                for day in sorted({d for d in found.values() if d and d < first_open}):
-                    if not archive.export_day(db, cfg, day, archive.archive_dir(cfg)):
-                        # в дне больше нет задач — старый Excel удаляем
-                        row = db.execute("SELECT file FROM exports WHERE day = ?", (day,)).fetchone()
-                        if row and row[0]:
-                            Path(row[0]).unlink(missing_ok=True)
-                        with db:
-                            db.execute("DELETE FROM exports WHERE day = ?", (day,))
-                        log.info("Архив: день %s пуст — Excel удалён", day)
             finally:
                 db.close()
             for i in ids:
@@ -660,6 +652,7 @@ def run(cfg: dict, dry_run: bool) -> int:
             if cfg.get("archive"):
                 try:
                     save_archive(cfg, res, geo_part)
+                    backup_archive(cfg)
                     if not dry_run:
                         refresh_closed(cfg, res, lock)
                         if cfg.get("publish_days"):
@@ -774,7 +767,7 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
         # дни окна перечитаны целиком — задачи, пропавшие из Bitrix, убираем
         days = [(frm.date() + timedelta(days=i)).isoformat() for i in range(cfg["days"])]
         gone = archive.prune(db, days, {t["id"] for t in res.get("tasks", [])})
-        archive.export_closed(db, cfg, frm, archive.archive_dir(cfg))
+        archive.settle(db, cfg, frm)
         log.info("Архив: обновлено задач %s%s", n, f", удалено (нет в Bitrix) {gone}" if gone else "")
     finally:
         db.close()
@@ -782,7 +775,7 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
 
 def migrate_scrub(cfg: dict) -> None:
     """Правила очистки (scrub.VERSION) сменились или ещё не применялись — перечистить уже сохранённое:
-    тексты в очереди geo-state.json, описания в archive.sqlite и Excel-выгрузки затронутых дней."""
+    тексты в очереди geo-state.json, описания в archive.sqlite."""
     import archive
     import scrub
     mark = APP_DIR / "scrub.json"
@@ -803,7 +796,7 @@ def migrate_scrub(cfg: dict) -> None:
         tmp = state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(state_path)
-    n_arch, n_xlsx, days = 0, 0, set()
+    n_arch = 0
     if (APP_DIR / "archive.sqlite").exists():
         db = archive.connect(APP_DIR / "archive.sqlite")
         try:
@@ -813,20 +806,15 @@ def migrate_scrub(cfg: dict) -> None:
                     if new != text:
                         db.execute("UPDATE tasks SET description = ? WHERE id = ?", (new, tid))
                         n_arch += 1
-                        days.add(day)
-            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-            for d in sorted(days & exported):          # в Excel тоже не должно остаться исходного текста
-                n_xlsx += bool(archive.export_day(db, cfg, d, archive.archive_dir(cfg)))
         finally:
             db.close()
     mark.write_text(json.dumps({"version": scrub.VERSION, "at": utc_now_iso()}), encoding="utf-8")
-    log.info("Очистка текстов (правила v%s): очередь %s, архив %s, Excel перевыгружено %s",
-             scrub.VERSION, n_state, n_arch, n_xlsx)
+    log.info("Очистка текстов (правила v%s): очередь %s, архив %s", scrub.VERSION, n_state, n_arch)
 
 
 def migrate_places(cfg: dict) -> None:
     """Правила «что это за место» (places.VERSION) сменились или ещё не применялись — пересчитать регион,
-    страну и идентификатор места у топонимов архива по координатам (без LLM) и перевыгрузить Excel."""
+    страну и идентификатор места у топонимов архива по координатам (без LLM)."""
     import archive
     import places
     mark = APP_DIR / "places.json"
@@ -835,7 +823,7 @@ def migrate_places(cfg: dict) -> None:
             return
     except (OSError, ValueError):
         pass
-    n, days, exported = 0, set(), set()
+    n = 0
     if (APP_DIR / "archive.sqlite").exists():
         gz = places.Gazetteer.get()
         db = archive.connect(APP_DIR / "archive.sqlite")
@@ -848,19 +836,42 @@ def migrate_places(cfg: dict) -> None:
                     db.execute("UPDATE toponyms SET region = ?, country = ?, pid = ? WHERE task_id = ? AND idx = ?",
                                (c["region"], c["country"], c["pid"], tid, idx))
                     n += 1
-                    days.add(day)
-            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
-            for d in sorted(days & exported):
-                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
         finally:
             db.close()
     mark.write_text(json.dumps({"version": places.VERSION, "at": utc_now_iso()}), encoding="utf-8")
-    log.info("Места (правила v%s): пересчитано топонимов %s, Excel перевыгружено %s",
-             places.VERSION, n, len(days & exported))
+    log.info("Места (правила v%s): пересчитано топонимов %s", places.VERSION, n)
+
+
+def backup_archive(cfg: dict) -> Path | None:
+    """Копия archive.sqlite раз в backup_days дней (средствами SQLite — корректна и при открытой базе),
+    хранится backup_keep последних. База — единственный экземпляр архива: копия на случай порчи файла или ошибки."""
+    every, keep = int(cfg.get("backup_days") or 0), max(1, int(cfg.get("backup_keep") or 1))
+    src = APP_DIR / "archive.sqlite"
+    if every <= 0 or not src.exists():
+        return None
+    out_dir = Path(cfg["backup_dir"]) if cfg.get("backup_dir") else APP_DIR / "backups"
+    old = sorted(out_dir.glob("archive-????-??-??.sqlite"))
+    today = date.today()
+    if old and (today - date.fromisoformat(old[-1].stem[len("archive-"):])).days < every:
+        return None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"archive-{today.isoformat()}.sqlite"
+    tmp = path.with_suffix(".tmp")
+    s, d = sqlite3.connect(src), sqlite3.connect(tmp)
+    try:
+        s.backup(d)
+    finally:
+        s.close()
+        d.close()
+    tmp.replace(path)
+    for f in sorted(out_dir.glob("archive-????-??-??.sqlite"))[:-keep]:
+        f.unlink(missing_ok=True)
+    log.info("Архив: копия базы → %s (%s КБ)", path, round(path.stat().st_size / 1024))
+    return path
 
 
 def refresh_closed(cfg: dict, res: dict, lock: Lock) -> None:
-    """Раз в сутки перечитать refresh_days закрытых дней перед окном: статусы на сайте и в Excel — текущие."""
+    """Раз в сутки перечитать refresh_days закрытых дней перед окном: статусы на сайте — текущие."""
     import archive
     n = int(cfg.get("refresh_days") or 0)
     frm = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M")
@@ -875,8 +886,8 @@ def refresh_closed(cfg: dict, res: dict, lock: Lock) -> None:
         log.info("Обновление статусов: %s закрытых дней", n)
         db = archive.connect(APP_DIR / "archive.sqlite")
         try:
-            days = sync_days(cfg, db, first - timedelta(days=n), first - timedelta(days=1), lock)
-            archive.reexport(db, cfg, days, frm, archive.archive_dir(cfg))
+            sync_days(cfg, db, first - timedelta(days=n), first - timedelta(days=1), lock)
+            archive.settle(db, cfg, frm)
         finally:
             db.close()
     state_path.write_text(json.dumps({"day": first.isoformat(), "at": utc_now_iso()}), encoding="utf-8")
@@ -901,7 +912,7 @@ def backfill(cfg: dict, d_from: date, d_to: date) -> int:
                 log.error("%s: %s — догружено то, что успели", e.code, e)
                 code = 3 if e.code == "LOGIN_REQUIRED" else 1
             window_from, _ = date_range(cfg, bitrix_now(cfg))
-            archive.reexport(db, cfg, days, window_from, archive.archive_dir(cfg))
+            archive.settle(db, cfg, window_from)
             n = write_days(db, DATA_REPO / "days", cfg["password"], cfg["kdf_iterations"], APP_DIR / "days-published.json")
             log.info("Догружено дней %s, файлов архива переписано %s", len(days), n)
         finally:
@@ -965,7 +976,8 @@ def main(argv=None) -> int:
     g.add_argument("--install-task", action="store_true", help="добавить в Планировщик Windows")
     g.add_argument("--remove-task", action="store_true", help="удалить из Планировщика")
     g.add_argument("--import-geocache", metavar="GEOJSON", help="добавить точки из GeoJSON в кэш координат")
-    g.add_argument("--export-day", metavar="ГГГГ-ММ-ДД", help="выгрузить день из архива в Excel (заново)")
+    g.add_argument("--export", nargs="+", metavar="ГГГГ-ММ-ДД",
+                   help="выгрузить из архива в Excel день или период (две даты)")
     g.add_argument("--llm", choices=["on", "off", "status"], help="включить / выключить анализ задач через Claude")
     g.add_argument("--llm-retry", nargs="*", metavar="ID",
                    help="повторить неудавшийся анализ (все задачи очереди или указанные номера) в следующий запуск")
@@ -1001,14 +1013,21 @@ def main(argv=None) -> int:
         return llm_retry(cfg, args.llm_retry)
     if args.forget or args.unforget:
         return forget(cfg, args.forget or args.unforget, undo=bool(args.unforget))
-    if args.export_day:
+    if args.export:
+        if len(args.export) > 2:
+            p.error("--export: одна или две даты")
+        try:
+            d_from, d_to = (date.fromisoformat(x).isoformat() for x in (args.export[0], args.export[-1]))
+        except ValueError:
+            p.error("--export: даты в виде ГГГГ-ММ-ДД")
         import archive
+        name = d_from if d_from == d_to else f"{d_from}_{d_to}"
         db = archive.connect(APP_DIR / "archive.sqlite")
         try:
-            p = archive.export_day(db, cfg, args.export_day, archive.archive_dir(cfg), record=False)
+            out = archive.export(db, cfg, d_from, d_to, archive.archive_dir(cfg) / f"{name}.xlsx")
         finally:
             db.close()
-        print(p or f"За {args.export_day} в архиве задач нет")
+        print(out or f"За {name} в архиве задач нет")
         return 0
     if args.backfill:
         if len(args.backfill) > 2:
