@@ -263,6 +263,8 @@
       if (r.ok) s += r.bad ? `<rect x="${labelW}" y="${yy}" width="${wOk}" height="${bh}" fill="var(--an-good)"/>` : `<path d="${barPath(labelW, yy, wOk, bh, 4)}" fill="var(--an-good)"/>`;
       if (r.bad) s += `<path d="${barPath(labelW + wOk + gap, yy, bw - wOk - gap, bh, 4)}" fill="var(--an-critical)"/>`;
       if (wOk > 64) s += `<text x="${labelW + 8}" y="${yy + bh / 2 + 4}" style="fill:#fff;font-weight:600">✓ ${Math.round(100 * r.ok / n)}%</text>`;
+      // доля с нарушением — у правого края красного отрезка
+      if (bw - wOk - gap > 64) s += `<text x="${labelW + bw - 8}" y="${yy + bh / 2 + 4}" text-anchor="end" style="fill:#fff;font-weight:600">! ${100 - Math.round(100 * r.ok / n)}%</text>`;   // в сумме с зелёной — ровно 100
       s += `<rect class="hit" data-i="${i}" x="0" y="${yy - 6}" width="${W}" height="${rowH}"/>`;
     });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Соблюдение срока по видам продукции">${s}</svg>`;
