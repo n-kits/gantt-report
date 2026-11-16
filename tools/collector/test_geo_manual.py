@@ -18,6 +18,7 @@ CSV = """название;регион;широта;долгота;примеч�
 Широкое;Днепропетровская область;47,686;33,264;село у Кривого Рога
 Гулево;ДНР;48.372, 36.972;;из Яндекс Карт
 Бузово;;;;проверено
+Прорыв;;не топоним;;модель приняла слово за место
 # Комментарий;;1;2
 """
 
@@ -41,13 +42,22 @@ class Manual(unittest.TestCase):
         self.assertTrue(self.m.checked("Бузово", "Киевская область"), "без региона — для любого")
         self.assertIsNone(self.m.get("Бузово", "Киевская область"), "без координат — только «проверено»")
         self.assertFalse(self.m.checked("Комментарий", ""))
-        self.assertEqual(len(self.m.points), 3)
+        self.assertEqual(len(self.m.points), 4)
 
     def test_geocoder_step0(self):
         cache = geo.GeoCache(Path(self.dir.name) / "geocache.json")
         p = geo.Geocoder(cache).resolve({"name": "Широкое", "kind": "settlement", "region": "Днепропетровская область",
                                          "lat": 48.0, "lon": 34.0})
         self.assertEqual((p["lat"], p["lon"], p["_src"]), (47.686, 33.264, "manual"))
+
+    def test_not_place(self):
+        self.assertTrue(self.m.removed("прорыв", "Донецкая область"), "без региона — для любого")
+        self.assertIsNone(self.m.get("Прорыв", ""), "координат нет")
+        self.assertTrue(self.m.checked("Прорыв", ""), "не попадает в оценки модели и regeo")
+        self.assertFalse(self.m.removed("Широкое", "Днепропетровская область"))
+        coder = geo.Geocoder(geo.GeoCache(Path(self.dir.name) / "geocache.json"))
+        self.assertIsNone(coder.resolve({"name": "Прорыв", "kind": "other", "lat": 48.0, "lon": 37.0}))
+        self.assertEqual(coder.unresolved, [], "и не в журнал ненайденного")
 
     def test_missing_file(self):
         m = geo.Manual(Path(self.dir.name) / "нет.csv")

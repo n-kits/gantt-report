@@ -381,7 +381,8 @@ def _move_points(cfg: dict, found: list) -> None:
     finally:
         db.close()
     for f in found:
-        log.info("  %s (%s): %.3f, %.3f → %.3f, %.3f", f[2], f[0], f[4] or 0, f[5] or 0, f[6], f[7])
+        old = f"{f[4]:.3f}, {f[5]:.3f} → " if isinstance(f[4], (int, float)) else ""
+        log.info("  %s (%s): %s%.3f, %.3f", f[2], f[0], old, f[6], f[7])
 
 
 # ---------------------------------------------------------------------------
@@ -390,12 +391,12 @@ def _move_points(cfg: dict, found: list) -> None:
 
 def manual(cfg: dict) -> int:
     """Координаты из geo-manual.csv — во все архивные точки с тем же названием и регионом модели
-    (строка без региона — для любого). Живое окно правки подхватывает само: сборщик геокодирует его каждый запуск."""
+    (строка без региона — для любого). Живое окно правки подхватывает само: сборщик геокодирует его каждый запуск.
+    «Не топоним» — строки архива переезжают в toponyms_removed; убрали отметку из файла — возвращаются."""
     m = geo.Manual(collect.APP_DIR / geo.MANUAL_NAME)
     m.ensure()
     if not m.points:
-        log.info("Ручных правок нет: %s", m.path)
-        return 0
+        log.info("Ручных правок нет: %s", m.path)       # но убранное раньше — вернуть (ниже)
     with wait_lock():
         db = archive.connect(collect.APP_DIR / "archive.sqlite")
         rows = db.execute("""SELECT p.task_id, p.idx, p.name, p.kind, p.macro, p.lat, p.lon, p.src, p.dkm, t.day
@@ -411,7 +412,43 @@ def manual(cfg: dict) -> int:
             found.append((tid, idx, name, kind, lat if src == "llm" else None, lon, c[0], c[1], day, "manual"))
         log.info("Ручные правки: мест в файле %s, точек в архиве изменено %s", len(m.points), len(found))
         _move_points(cfg, found)
+        _not_places(cfg, m)
     return 0
+
+
+def _not_places(cfg: dict, m: "geo.Manual") -> None:
+    """«Не топоним» из geo-manual.csv: строки архива — в toponyms_removed (не на карте, не в аналитике и Excel);
+    отметку из файла убрали — строка возвращается в конец топонимов задачи. Вызывать под wait_lock()."""
+    db = archive.connect(collect.APP_DIR / "archive.sqlite")
+    try:
+        with db:
+            db.execute("CREATE TABLE IF NOT EXISTS toponyms_removed AS SELECT * FROM toponyms WHERE 0")
+            cols = [r[1] for r in db.execute("PRAGMA table_info(toponyms_removed)")]
+            sel = ", ".join(f"p.{c}" for c in cols)
+            gone = [r for r in db.execute("SELECT task_id, idx, name, macro FROM toponyms")
+                    if m.removed(r[2], (r[3] or "").split(",")[0])]
+            back = [r for r in db.execute("SELECT task_id, idx, name, macro FROM toponyms_removed")
+                    if not m.removed(r[2], (r[3] or "").split(",")[0])]
+            for tid, idx, *_ in gone:
+                db.execute(f"INSERT INTO toponyms_removed ({', '.join(cols)}) SELECT {sel} FROM toponyms p "
+                           "WHERE task_id = ? AND idx = ?", (tid, idx))
+                db.execute("DELETE FROM toponyms WHERE task_id = ? AND idx = ?", (tid, idx))
+            for tid, idx, *_ in back:
+                # номер — за последним топонимом задачи (старый мог занять другой)
+                (n,) = db.execute("SELECT coalesce(max(idx), -1) + 1 FROM toponyms WHERE task_id = ?", (tid,)).fetchone()
+                vals = ", ".join("?" if c == "idx" else f"p.{c}" for c in cols)
+                db.execute(f"INSERT INTO toponyms ({', '.join(cols)}) SELECT {vals} FROM toponyms_removed p "
+                           "WHERE task_id = ? AND idx = ?", (n, tid, idx))
+                db.execute("DELETE FROM toponyms_removed WHERE task_id = ? AND idx = ?", (tid, idx))
+        if gone or back:
+            log.info("Не топонимы: убрано из архива %s, возвращено %s", len(gone), len(back))
+            tids = sorted({r[0] for r in gone + back})
+            days = {d for (d,) in db.execute(f"SELECT day FROM tasks WHERE id IN ({','.join('?' * len(tids))})", tids)}
+            exported = {d for (d,) in db.execute("SELECT day FROM exports")}
+            for d in sorted(days & exported):
+                archive.export_day(db, cfg, d, archive.archive_dir(cfg))
+    finally:
+        db.close()
 
 
 def main() -> int:

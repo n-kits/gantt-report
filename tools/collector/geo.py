@@ -303,6 +303,8 @@ class GeoCache:
 
 MANUAL_NAME = "geo-manual.csv"
 MANUAL_HEADER = "название;регион;широта;долгота;примечание"
+NOT_PLACE = "не топоним"
+NOT_PLACE_WORDS = ("не топоним", "нет", "-")
 
 
 class Manual:
@@ -310,13 +312,14 @@ class Manual:
     Ручные правки мест — локальный geo-manual.csv рядом с кэшем (в репозиторий не попадает), «;», UTF-8.
     Строка: название; регион (как у модели, можно пусто — тогда для любого региона); широта; долгота; примечание.
     С координатами — точка вместо кэша, Nominatim и оценки модели (источник «вручную»); без координат —
-    отметка «проверено»: точка как есть, её не трогает перегеокодирование и нет в подозрительных парах.
+    отметка «проверено»: точка как есть, её не трогает перегеокодирование и нет в подозрительных парах;
+    «не топоним» вместо широты — слово модель приняла за место по ошибке: на карту и в архив не попадает.
     Координаты — числами с точкой или запятой, можно обе в одной ячейке («48.6, 37.6» из Яндекс Карт).
     """
 
     def __init__(self, path: Path):
         self.path = path
-        self.points: dict = {}              # (название, регион) → [lat, lon] | None (только «проверено»)
+        self.points: dict = {}              # (название, регион) → [lat, lon] | None («проверено») | NOT_PLACE
         if not path.exists():
             return
         import csv
@@ -328,6 +331,8 @@ class Manual:
 
     @staticmethod
     def _coords(a: str, b: str):
+        if norm(a) in NOT_PLACE_WORDS:
+            return NOT_PLACE
         if not b and a.count(",") == 1 and "." in a:                  # «48.6, 37.6» в одной ячейке
             a, b = a.split(",")
         try:
@@ -344,7 +349,12 @@ class Manual:
 
     def get(self, name: str, region: str):
         """Координаты, заданные вручную, или None."""
-        return self._find(name, region)[1]
+        c = self._find(name, region)[1]
+        return c if isinstance(c, list) else None
+
+    def removed(self, name: str, region: str) -> bool:
+        """Не топоним: модель приняла слово за место по ошибке."""
+        return self._find(name, region)[1] == NOT_PLACE
 
     def checked(self, name: str, region: str) -> bool:
         """Место есть в файле — с координатами или с отметкой «проверено»."""
@@ -521,6 +531,8 @@ class Geocoder:
             return None
         kind = t.get("kind") or "other"
         iso = (t.get("country") or "").upper()
+        if self.manual.removed(name, osm_region((t.get("region") or (t.get("macro") or "").split(",")[0]).strip())):
+            return None                                  # не топоним (geo-manual.csv)
         if kind == "country" and iso in self.countries:
             return {"name": name, "kind": "country", "iso": iso, "_src": "basemap"}
 
