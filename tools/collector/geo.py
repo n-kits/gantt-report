@@ -620,6 +620,17 @@ def pending(state: dict, res: dict) -> list[dict]:
     return out
 
 
+def transient(e: Exception) -> bool:
+    """Сбой, в котором задача не виновата: нет связи, таймаут, лимит запросов, перегрузка или ошибка сервера API."""
+    try:
+        import anthropic
+    except ImportError:
+        return False
+    if isinstance(e, (anthropic.APIConnectionError, anthropic.RateLimitError)):   # APITimeoutError — подкласс
+        return True
+    return isinstance(e, anthropic.APIStatusError) and e.status_code >= 500
+
+
 def retry_due(st: dict) -> bool:
     """Неудачный анализ (отказ модели, сбой API) повторяем через 1, 2 ч и бросаем после 3 попыток."""
     n = st.get("attempts", 0)
@@ -692,18 +703,26 @@ def build(app_dir: Path, cfg: dict, res: dict, todo: list[dict]) -> dict:
                                            seen=prev.get("seen") or datetime.now().date().isoformat())
         log.info("LLM выключен (--llm on — включить): ждут анализа %s", len(todo))
     elif todo:
+        offline = False
         try:
             results = analyze([{"id": t["id"], "name": t["name"], "text": t["text"]} for t in todo], cfg)
         except Exception as e:  # noqa: BLE001 — лента публикуется и без карты
-            log.error("Анализ топонимов не удался: %s: %s", type(e).__name__, e)
+            offline = transient(e)
+            log.error("Анализ топонимов не удался: %s: %s%s", type(e).__name__, e,
+                      " — сбой связи, попытка не засчитана" if offline else "")
             results = {}
         now = datetime.now().isoformat(timespec="seconds")
         for t in todo:
+            prev = state["tasks"].get(t["id"]) or {}
             if t["id"] in results:
                 state["tasks"][t["id"]] = {"hash": t["hash"], "result": results[t["id"]], "analyzedAt": now,
                                            "model": cfg.get("llm_model")}
+            elif offline:
+                # сеть или перегрузка API — не вина задачи: счётчик не трогаем, повторим в следующий запуск
+                keep = {k: prev[k] for k in ("attempts", "failedAt") if prev.get("hash") == t["hash"] and k in prev}
+                state["tasks"][t["id"]] = dict(keep, hash=t["hash"], text=t["text"],
+                                               seen=prev.get("seen") or datetime.now().date().isoformat())
             else:
-                prev = state["tasks"].get(t["id"]) or {}
                 n = prev.get("attempts", 0) + 1 if prev.get("hash") == t["hash"] else 1
                 state["tasks"][t["id"]] = {"hash": t["hash"], "failedAt": now, "attempts": n, "text": t["text"],
                                            "seen": prev.get("seen") or datetime.now().date().isoformat()}
