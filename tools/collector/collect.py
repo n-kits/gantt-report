@@ -28,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -238,8 +239,114 @@ def open_range(page, cfg: dict, frm: datetime, to: datetime, base: str | None = 
     if res.get("hasNextPage"):
         raise CollectError("PAGINATED", "Список разбит на страницы — включите «показать все» в Bitrix")
     res["range"] = {"from": fmt_bx(frm), "to": fmt_bx(to)}
+    drop_forgotten(res)
     log.info("Задач: %s, диапазон %s — %s, время Bitrix %s", res["count"], *res["range"].values(), res["now"])
     return res
+
+
+# ---------------------------------------------------------------------------
+# Исключённые задачи (--forget): не попадают ни в ленту, ни в архив, ни на сайт
+# ---------------------------------------------------------------------------
+
+def forgotten_path() -> Path:
+    return APP_DIR / "forgotten.json"
+
+
+def load_forgotten() -> dict:
+    """{номер задачи: {"day": рабочий день, "at": когда исключена}}"""
+    try:
+        return json.loads(forgotten_path().read_text(encoding="utf-8")).get("tasks", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def drop_forgotten(res: dict) -> None:
+    """Убрать исключённые задачи из ответа Bitrix — до ленты, анализа и архива."""
+    ids = load_forgotten()
+    if not ids or not res.get("tasks"):
+        return
+    keep = [i for i, t in enumerate(res["tasks"]) if t["id"] not in ids]
+    if len(keep) == len(res["tasks"]):
+        return
+    log.info("Исключённые задачи пропущены: %s", len(res["tasks"]) - len(keep))
+    res["rows"] = [res["rows"][i] for i in keep]
+    res["tasks"] = [res["tasks"][i] for i in keep]
+    res["count"] = len(keep)
+
+
+def forget(cfg: dict, ids: list[str], undo: bool = False) -> int:
+    """Удалить задачи из архива полностью и больше не собирать (undo — вернуть в сбор).
+    Удаляется: архив (задача, анализ, топонимы), очередь анализа; Excel дня и архив дней на сайте
+    переписываются, аналитика пересчитывается. Живая лента — со следующего запуска сборщика."""
+    import archive
+    import geo
+    ids = [i.strip() for i in ids if i.strip()]
+    try:
+        with Lock():
+            marks = load_forgotten()
+            if undo:
+                back = [i for i in ids if marks.pop(i, None) is not None]
+                forgotten_path().write_text(json.dumps({"tasks": marks}, ensure_ascii=False, indent=1), encoding="utf-8")
+                for i in back:
+                    log.info("Исключение снято: задача %s", i)
+                print(f"Снято исключение: {', '.join(back) or 'нет таких'}. Задача вернётся, когда её снова отдаст Bitrix: "
+                      "в живом окне — сама, для закрытого дня — collect.py --backfill ГГГГ-ММ-ДД.")
+                return 0
+            db = archive.connect(APP_DIR / "archive.sqlite")
+            try:
+                found = dict(db.execute(f"SELECT id, day FROM tasks WHERE id IN ({','.join('?' * len(ids))})", ids))
+                with db:
+                    for tbl, col in (("tasks", "id"), ("analysis", "task_id"), ("toponyms", "task_id"),
+                                     ("toponyms_removed", "task_id")):
+                        try:
+                            db.executemany(f"DELETE FROM {tbl} WHERE {col} = ?", [(i,) for i in ids])
+                        except sqlite3.OperationalError:    # toponyms_removed ещё не создана
+                            pass
+                now = datetime.now().isoformat(timespec="seconds")
+                for i in ids:
+                    marks[i] = {"day": found.get(i) or (marks.get(i) or {}).get("day"), "at": now}
+                forgotten_path().write_text(json.dumps({"tasks": marks}, ensure_ascii=False, indent=1), encoding="utf-8")
+
+                state = load_geo_state()
+                if any(state["tasks"].pop(i, None) is not None for i in ids):
+                    geo._save_json(APP_DIR / "geo-state.json", state)
+
+                window_from, _ = date_range(cfg, bitrix_now(cfg))
+                first_open = (window_from - timedelta(hours=cfg["day_start_hour"])).date().isoformat()
+                for day in sorted({d for d in found.values() if d and d < first_open}):
+                    if not archive.export_day(db, cfg, day, archive.archive_dir(cfg)):
+                        # в дне больше нет задач — старый Excel удаляем
+                        row = db.execute("SELECT file FROM exports WHERE day = ?", (day,)).fetchone()
+                        if row and row[0]:
+                            Path(row[0]).unlink(missing_ok=True)
+                        with db:
+                            db.execute("DELETE FROM exports WHERE day = ?", (day,))
+                        log.info("Архив: день %s пуст — Excel удалён", day)
+            finally:
+                db.close()
+            for i in ids:
+                log.info("Задача %s удалена из архива%s и исключена из сбора", i,
+                         f" (день {found[i]})" if i in found else " (в архиве её не было)")
+            published = False
+            if cfg.get("archive") and cfg.get("publish_days"):
+                publish_days(cfg)
+                published = True
+            if cfg.get("publish_analytics"):
+                publish_analytics(cfg)
+                published = True
+            if published and cfg.get("password"):
+                try:
+                    publish(cfg, None)
+                except CollectError as e:   # нет сети — сайт обновит следующий запуск сборщика
+                    log.error("%s: %s — сайт обновится следующим запуском", e.code, e)
+    except CollectError as e:
+        print(f"{e} — повторите через минуту-две.")
+        return 1
+    missing = [i for i in ids if i not in found]
+    print(f"Удалено из архива: {', '.join(i for i in ids if i in found) or 'ничего'}"
+          + (f"; в архиве не было: {', '.join(missing)}" if missing else "")
+          + ". Все — в списке исключённых (forgotten.json), на живой ленте пропадут со следующего запуска.")
+    return 0
 
 
 def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
@@ -862,6 +969,9 @@ def main(argv=None) -> int:
     g.add_argument("--llm", choices=["on", "off", "status"], help="включить / выключить анализ задач через Claude")
     g.add_argument("--llm-retry", nargs="*", metavar="ID",
                    help="повторить неудавшийся анализ (все задачи очереди или указанные номера) в следующий запуск")
+    g.add_argument("--forget", nargs="+", metavar="ID",
+                   help="удалить задачи из архива полностью и больше не собирать")
+    g.add_argument("--unforget", nargs="+", metavar="ID", help="снять исключение --forget")
     g.add_argument("--backfill", nargs="+", metavar="ГГГГ-ММ-ДД",
                    help="догрузить рабочие дни из Bitrix в архив и на сайт: С [ПО] (по умолчанию — по сегодня)")
     p.add_argument("--dry-run", action="store_true", help="собрать без публикации")
@@ -889,6 +999,8 @@ def main(argv=None) -> int:
         return llm_switch(cfg, args.llm)
     if args.llm_retry is not None:
         return llm_retry(cfg, args.llm_retry)
+    if args.forget or args.unforget:
+        return forget(cfg, args.forget or args.unforget, undo=bool(args.unforget))
     if args.export_day:
         import archive
         db = archive.connect(APP_DIR / "archive.sqlite")
