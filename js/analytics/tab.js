@@ -1,6 +1,7 @@
 /*
  * Вкладка «Аналитика» на главной: корешки «Лента / Аналитика», загрузка analytics.json из ветки data
- * (сборщик: publish_analytics в tools/collector/collect.py), расшифровка паролем живой ленты, проверка раз в 5 минут.
+ * (сборщик: publish_analytics в tools/collector/collect.py), расшифровка паролем живой ленты, проверка раз в 5 минут —
+ * только пока окно на виду, и без повторного скачивания неизменного файла (ETag → 304).
  *
  * Данные можно подменить: ?analytics-data=<url> (для локальной проверки).
  */
@@ -32,11 +33,14 @@
 
   // --- данные ---------------------------------------------------------------
   async function load(force) {
-    if (!visible || busy) return;
+    // вкладка «Аналитика» не открыта или окно браузера скрыто — не опрашиваем; вернутся — visibilitychange обновит
+    if (!visible || busy || document.hidden) return;
     busy = true;
     try {
       try {
-        const r = await fetch(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, { cache: 'no-store' });
+        // файл растёт вместе с архивом: не качаем его заново, если он не менялся. cache: 'no-cache' — браузер
+        // переспрашивает сервер с ETag, неизменный файл приходит ответом 304 без тела и берётся из кэша браузера
+        const r = await fetch(url, { cache: 'no-cache' });
         if (r.status === 404) { say('Данные аналитики ещё не опубликованы — они появятся после следующего запуска сборщика.', 'warn'); return; }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         envelope = await r.json();

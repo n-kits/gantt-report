@@ -174,7 +174,8 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') poll(false);
   });
-  setInterval(() => poll(false), POLL_MS);
+  // окно браузера скрыто — не опрашиваем: при возврате visibilitychange обновит сразу
+  setInterval(() => { if (!document.hidden) poll(false); }, POLL_MS);
 
   root.GanttLive = {
     // пользователь загрузил свой файл — не перебиваем его живыми данными

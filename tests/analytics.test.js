@@ -103,6 +103,18 @@
     eq(A.today(M, new Date(2026, 9, 14, 3, 30)).day, '2026-10-13', 'до 04:00 — ещё вчерашние рабочие сутки');
   });
 
+  test('«Заказы по дням»: укрупнение до недель (пн–вс) и месяцев, неполные периоды по краям', () => {
+    const w = A.buckets('2026-09-03', '2026-09-21', 'week');   // чт … пн
+    eq(w.map(b => [b.key, b.days.length, b.partial]), [['2026-08-31', 4, true], ['2026-09-07', 7, false], ['2026-09-14', 7, false], ['2026-09-21', 1, true]]);
+    const m = A.buckets('2026-09-01', '2026-11-17', 'month');
+    eq(m.map(b => [b.key, b.days.length, b.full, b.partial, A.bucketLabel(b)]),
+      [['2026-09-01', 30, 30, false, 'сен 26'], ['2026-10-01', 31, 31, false, 'окт 26'], ['2026-11-01', 17, 30, true, 'ноя 26']]);
+    eq(A.buckets('2026-11-16', '2026-11-17', 'day').map(b => [b.key, b.partial]), [['2026-11-16', false], ['2026-11-17', false]]);
+    // 78 дней при 16 px на столбик: 1300 px — дни, 900 px — недели; год при 300 px — месяцы
+    eq([A.autoGran('2026-09-01', '2026-11-17', 1300, 16), A.autoGran('2026-09-01', '2026-11-17', 900, 16),
+        A.autoGran('2026-09-01', '2027-08-31', 300, 16)], ['day', 'week', 'month']);
+  });
+
   // свой блок: тесты Bitrix асинхронные и перезаписывают #out
   const out = document.body.appendChild(document.createElement('div'));
   const ok = results.filter(r => r.ok).length;

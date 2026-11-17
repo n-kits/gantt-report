@@ -242,9 +242,16 @@
       <div class="an-grid">
         <section class="an-card w12"><div class="kpis" id="an-kpis"></div></section>
         <section class="an-card w8">
-          <h3>Заказы по дням</h3>
+          <div class="an-head"><h3 id="an-days-title">Заказы по дням</h3>
+            <div class="an-seg" id="an-days-gran" role="group" aria-label="Шаг столбиков">
+              <button type="button" data-g="auto" title="Самый мелкий шаг, при котором столбики читаются">Авто</button>
+              <button type="button" data-g="day">Дни</button>
+              <button type="button" data-g="week">Недели</button>
+              <button type="button" data-g="month">Месяцы</button>
+            </div></div>
           <p class="an-cap">Рабочий день — с 04:00 до 04:00, по времени регистрации; цвет — вид продукции. Клик по легенде — фильтр.
-            В подсказке — когда статусы дня сверены с Bitrix.</p>
+            Длинный период укрупняется до недель (пн–вс) и месяцев; неполные по краям периода — бледнее.
+            В подсказке — когда статусы сверены с Bitrix.</p>
           <div class="an-legend" id="an-days-legend"></div>
           <div class="an-chart" id="an-days"></div>
           <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-days-t"></div></details>

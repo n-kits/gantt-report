@@ -134,54 +134,86 @@
     ].join('');
   }
 
-  // заказы по дням: столбики с разбивкой по видам продукции; в подсказке — когда сверены статусы дня
+  // заказы по дням: столбики с разбивкой по видам продукции; в подсказке — когда сверены статусы.
+  // Длинный период укрупняется: дни → недели (пн–вс) → месяцы — самый мелкий шаг, при котором столбик
+  // не уже MIN_BAND px (st.gran = 'auto'); можно выбрать шаг вручную. Неполный период по краям — бледнее.
+  const MIN_BAND = 16;   // столбик с подписью «всего» над ним
+  const GRAN_WORD = { day: ['День', 'по дням', 'дни'], week: ['Неделя', 'по неделям', 'недели'], month: ['Месяц', 'по месяцам', 'месяцы'] };
   function days(ctx) {
     const { M, st, list } = ctx;
     const el = ctx.$('days');
-    const ds = []; for (let d = st.from; d <= st.to; d = addDays(d, 1)) ds.push(d);
+    const W = widthOf(el), H = 240, L = 34, R = 8, T = 18, B = 26;   // T — место под подпись «всего» у самого высокого
+    const auto = !st.gran || st.gran === 'auto';
+    const gran = auto ? A.autoGran(st.from, st.to, W - L - R, MIN_BAND) : st.gran;
+    const bs = A.buckets(st.from, st.to, gran);
     const shown = PRODUCTS.filter(p => !st.product || p.key === st.product);
-    const by = ds.map(d => { const o = { day: d, total: 0 }; PRODUCTS.forEach(p => { o[p.key] = 0; }); return o; });
-    const idx = Object.fromEntries(ds.map((d, i) => [d, i]));
+    const by = bs.map(b => { const o = Object.assign({}, b, { total: 0 }); PRODUCTS.forEach(p => { o[p.key] = 0; }); return o; });
+    const idx = {};
+    by.forEach((o, i) => o.days.forEach(d => { idx[d] = i; }));
     list.forEach(t => { const o = by[idx[t.day]]; if (o) { o[t.pkey]++; o.total++; } });
+    by.forEach(o => {
+      o.sum = shown.reduce((a, p) => a + o[p.key], 0);
+      // статусы на: самая ранняя сверка среди дней периода
+      const ts = o.days.map(d => M.checked[d]).filter(Boolean).sort();
+      o.checked = ts[0] || '';
+    });
 
     ctx.$('days-legend').innerHTML = PRODUCTS.map(p =>
       `<button type="button" data-p="${p.key}" aria-pressed="${!st.product || st.product === p.key}"><span class="sw" style="background:${p.color}"></span>${p.label}</button>`).join('');
     ctx.$('days-legend').querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
       ctx.update({ product: st.product === b.dataset.p ? '' : b.dataset.p })));
+    ctx.$('days-title').textContent = `Заказы ${GRAN_WORD[gran][1]}`;
+    const gb = ctx.$('days-gran');
+    gb.querySelectorAll('button').forEach(b => {
+      b.setAttribute('aria-pressed', String((b.dataset.g === 'auto') === auto && (auto || b.dataset.g === gran)));
+      b.onclick = () => ctx.setGran(b.dataset.g);
+    });
+    const autoBtn = gb.querySelector('[data-g="auto"]');
+    if (autoBtn) autoBtn.textContent = auto ? `Авто · ${GRAN_WORD[gran][2]}` : 'Авто';
 
-    const W = widthOf(el), H = 240, L = 34, R = 8, T = 10, B = 26;
-    const tk = ticks(Math.max(...by.map(o => o.total))), max = tk.top;
-    const band = (W - L - R) / ds.length, bw = Math.min(24, Math.max(3, band * 0.7));
+    const tk = ticks(Math.max(...by.map(o => o.sum))), max = tk.top;
+    const band = (W - L - R) / by.length, bw = Math.min(gran === 'day' ? 24 : 40, Math.max(2, band * 0.7));
     const y = v => T + (H - T - B) * (1 - v / max);
     let s = yAxis(tk, y, L, W, R);
-    const every = Math.max(1, Math.ceil(ds.length / Math.floor((W - L) / 46)));
+    const lblW = gran === 'month' ? 52 : 46;
+    const every = Math.max(1, Math.ceil(by.length / Math.floor((W - L) / lblW)));
+    // «всего» над столбиком — у всех или ни у кого: только если самое длинное число влезает в ширину столбика
+    const totals = band >= textW(el, fmtN(Math.max(...by.map(o => o.sum)))) + 4;
     by.forEach((o, i) => {
       const x = L + band * i + (band - bw) / 2;
+      const op = o.partial ? ' fill-opacity="0.45"' : '';
       let acc = 0;
       const segs = shown.filter(p => o[p.key]);
       segs.forEach((p, j) => {
         const y0 = y(acc), y1 = y(acc + o[p.key]);
         const gap = j < segs.length - 1 ? 2 : 0;           // 2px зазор цвета фона между сегментами
         const h = Math.max(0, y0 - y1);
-        s += j === segs.length - 1 ? `<path d="${colPath(x, y1, bw, h, 4)}" fill="${p.color}"/>`
-          : `<rect x="${x}" y="${y1 + gap}" width="${bw}" height="${Math.max(0, h - gap)}" fill="${p.color}"/>`;
+        s += j === segs.length - 1 ? `<path d="${colPath(x, y1, bw, h, 4)}" fill="${p.color}"${op}/>`
+          : `<rect x="${x}" y="${y1 + gap}" width="${bw}" height="${Math.max(0, h - gap)}" fill="${p.color}"${op}/>`;
         acc += o[p.key];
       });
+      if (o.sum && totals) s += `<text class="tot${o.partial ? ' part' : ''}" x="${x + bw / 2}" y="${y(o.sum) - 4}" text-anchor="middle">${fmtN(o.sum)}</text>`;
       if (i % every === 0) {
-        const wd = new Date(o.day + 'T12:00').getDay();
-        s += `<text x="${L + band * i + band / 2}" y="${H - 8}" text-anchor="middle"${wd === 0 || wd === 6 ? ' style="font-weight:600"' : ''}>${dm(o.day)}</text>`;
+        const wd = new Date(o.key + 'T12:00').getDay();
+        const bold = gran === 'day' && (wd === 0 || wd === 6) ? ' style="font-weight:600"' : '';
+        s += `<text x="${L + band * i + band / 2}" y="${H - 8}" text-anchor="middle"${bold}>${A.bucketLabel(o)}</text>`;
       }
       s += `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
     });
-    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Заказы по дням">${s}</svg>`;
-    bindHits(el, by, o => {
-      const wd = new Date(o.day + 'T12:00').toLocaleDateString('ru-RU', { weekday: 'long' });
-      return `<div class="t">${dmy(o.day)}, ${wd}</div>` + shown.filter(p => o[p.key]).reverse().map(p => row(p.color, p.label, fmtN(o[p.key]))).join('') +
-        row('', 'Всего', fmtN(shown.reduce((a, p) => a + o[p.key], 0))) +
-        (M.checked[o.day] ? `<div class="g">статусы на ${dmhm(M.checked[o.day])}</div>` : '');
-    });
-    ctx.$('days-t').innerHTML = table(['День', ...shown.map(p => p.label), 'Всего', 'Статусы на'],
-      by.map(o => [dmy(o.day), ...shown.map(p => o[p.key]), shown.reduce((a, p) => a + o[p.key], 0), dmhm(M.checked[o.day])]));
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="Заказы ${GRAN_WORD[gran][1]}">${s}</svg>`;
+    const title = o => {
+      if (o.gran === 'day') return `${dmy(o.key)}, ${new Date(o.key + 'T12:00').toLocaleDateString('ru-RU', { weekday: 'long' })}`;
+      const last = addDays(o.key, o.full - 1);
+      return (o.gran === 'week' ? `Неделя ${dm(o.key)}–${dm(last)}` : `${A.MONTHS[+o.key.slice(5, 7) - 1]} ${o.key.slice(0, 4)}`);
+    };
+    const partNote = o => o.partial ? `неполн${o.gran === 'week' ? 'ая' : 'ый'}: ${fmtN(o.days.length)} из ${fmtN(o.full)} дн. (${dm(o.days[0])}–${dm(o.days[o.days.length - 1])})` : '';
+    bindHits(el, by, o => `<div class="t">${title(o)}</div>` + (o.partial ? `<div class="g">${partNote(o)}</div>` : '') +
+      shown.filter(p => o[p.key]).reverse().map(p => row(p.color, p.label, fmtN(o[p.key]))).join('') +
+      row('', 'Всего', fmtN(o.sum)) + (o.gran !== 'day' ? row('', 'В среднем за день', fmt1(o.sum / o.days.length)) : '') +
+      (o.checked ? `<div class="g">статусы на ${dmhm(o.checked)}</div>` : ''));
+    const head = [GRAN_WORD[gran][0], ...shown.map(p => p.label), 'Всего'].concat(gran !== 'day' ? ['В день', 'Дней'] : [], ['Статусы на']);
+    ctx.$('days-t').innerHTML = table(head, by.map(o => [gran === 'day' ? dmy(o.key) : title(o), ...shown.map(p => o[p.key]), o.sum]
+      .concat(gran !== 'day' ? [fmt1(o.sum / o.days.length), o.partial ? `${o.days.length} из ${o.full}` : o.full] : [], [dmhm(o.checked)])));
   }
 
   function projects(ctx) {

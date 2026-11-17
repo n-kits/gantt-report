@@ -18,7 +18,7 @@
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { mode: '', days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
+  const DEFAULTS = { mode: '', gran: 'auto', days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
 
   const $ = id => document.getElementById('an-' + id);
 
@@ -93,7 +93,7 @@
     $('project').addEventListener('change', e => update({ project: e.target.value }));
     $('product').addEventListener('change', e => update({ product: e.target.value }));
     $('reset').addEventListener('click', () => {
-      const keep = { beta: st.beta, betaPlaces: st.betaPlaces, minw: st.minw };
+      const keep = { beta: st.beta, betaPlaces: st.betaPlaces, minw: st.minw, gran: st.gran };
       st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null, mode: '' });
       sync(); render();
     });
@@ -260,7 +260,8 @@
       D.todayView({ M, st, T, $, update });
       return;
     }
-    const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot, loadSankey: ensureSankey };
+    const setGran = g => { st.gran = g; save(); D.days(ctx); };
+    const ctx = { M, st, list: filtered(), $, update, roleColor, setGran, loadPlot: ensurePlot, loadSankey: ensureSankey };
     marginControls();
     status();
     D.kpis(ctx); D.days(ctx); D.projects(ctx); D.heat(ctx);

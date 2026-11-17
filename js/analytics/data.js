@@ -86,6 +86,37 @@
     return ts.length ? { oldest: ts[0], newest: ts[ts.length - 1] } : null;
   }
 
+  // --- укрупнение «Заказов по дням»: дни → недели (пн–вс) → месяцы ----------------
+  // Столбик периода: key — первый день календарного периода, days — его дни внутри [from, to],
+  // full — сколько дней в периоде целиком; partial — период обрезан краем выбранного интервала.
+  const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const GRANS = ['day', 'week', 'month'];
+  function periodStart(d, gran) {
+    if (gran === 'week') return addDays(d, -((new Date(d + 'T12:00').getDay() + 6) % 7));
+    if (gran === 'month') return d.slice(0, 8) + '01';
+    return d;
+  }
+  function periodLen(key, gran) {
+    if (gran === 'week') return 7;
+    if (gran === 'month') return new Date(+key.slice(0, 4), +key.slice(5, 7), 0).getDate();
+    return 1;
+  }
+  function buckets(from, to, gran) {
+    const out = [], by = new Map();
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      const k = periodStart(d, gran);
+      if (!by.has(k)) { const b = { key: k, gran, days: [], full: periodLen(k, gran) }; by.set(k, b); out.push(b); }
+      by.get(k).days.push(d);
+    }
+    out.forEach(b => { b.partial = b.days.length < b.full; });
+    return out;
+  }
+  // самый мелкий шаг, при котором столбик не уже minBand пикселей
+  function autoGran(from, to, width, minBand) {
+    return GRANS.find(g => width / buckets(from, to, g).length >= minBand) || 'month';
+  }
+  const bucketLabel = b => b.gran === 'month' ? `${MONTHS[+b.key.slice(5, 7) - 1]} ${b.key.slice(2, 4)}` : dm(b.key);
+
   // --- «Сегодня»: день против обычного такого же дня недели --------------------
   // Рабочие сутки — с 04:00. «Обычный» — тот же день недели за REF_WEEKS прошлых недель (поток сильно зависит
   // от дня недели: в понедельник ~23 заказа, в субботу ~2), сравнение — к тому же часу суток.
@@ -213,6 +244,7 @@
     HOUR, DAY, PRODUCTS, WIN,
     prepare, placeGroup, inRange, byDims, topWindow, statusAt, pairs, graphPeople, graphPlaces,
     today, openAt, workdayOf, DAY_START, REF_WEEKS,
+    buckets, autoGran, bucketLabel, GRANS, MONTHS,
     util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, quantile },
   });
 })(typeof window !== 'undefined' ? window : globalThis);
