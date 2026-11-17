@@ -93,7 +93,8 @@
       s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
         `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>` +
         (it.ref != null ? `<line class="ref" x1="${labelW + x(it.ref)}" x2="${labelW + x(it.ref)}" y1="${yy - 3}" y2="${yy + bh + 3}"/>` : '') +
-        `<text class="val" x="${labelW + Math.max(w, it.ref != null ? x(it.ref) + 2 : 0) + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
+        // цифра — всегда сразу за столбиком; черта «обычно» может пройти по ней — белая обводка держит читаемость
+        `<text class="val${it.ref != null ? ' halo' : ''}" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
         `<rect class="hit${opts.onClick ? ' click' : ''}" data-i="${i}" x="0" y="${yy - 5}" width="${W}" height="${rowH}"/>`;
     });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title || '')}">${s}</svg>`;
@@ -564,7 +565,7 @@ ${fmtSigned(d.h)}` }),
     hours.forEach((p, i) => { s += `<rect class="hit" data-i="${i}" x="${x(p.k) - cw / 2}" y="${T}" width="${cw}" height="${H - T - B}"/>`; });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title)}">${s}</svg>`;
     bindHits(el, hours, p => `<div class="t">${opts.at(p.k)}</div>` +
-      (p.today != null ? row('var(--an-accent)', 'Сегодня', fmtN(p.today)) : '') +
+      (p.today != null ? row('var(--an-today)', 'Сегодня', fmtN(p.today)) : '') +
       (p.med != null ? row('', `Медиана по ${opts.refWord}`, fmtRef(p.med)) + row('', 'Обычно', `${fmtRef(p.lo)}–${fmtRef(p.hi)}`) : ''));
   }
 
@@ -584,7 +585,7 @@ ${fmtSigned(d.h)}` }),
     dayCurve(ctx.$('t-open'), T.curves.open, { title: 'Одновременно в работе', refWord: T.refWord, at: k => `в работе в ${hourLabel(k)}` });
     ctx.$('t-open-t').innerHTML = curveTable(T.curves.open);
 
-    const tipRef = it => `<div class="t">${esc(it.label)}</div>${row('var(--an-accent)', 'Сегодня', fmtN(it.value))}${row('', `Медиана по ${T.refWord}`, fmtRef(it.ref))}`;
+    const tipRef = it => `<div class="t">${esc(it.label)}</div>${row('', 'Сегодня', fmtN(it.value))}${row('', `Медиана по ${T.refWord}`, fmtRef(it.ref))}`;
     const prod = T.products.map(p => { const P = PRODUCTS.find(x => x.key === p.key); return Object.assign({}, p, { label: P.label, color: P.color }); });
     if (prod.length) hbars(ctx.$('t-products'), prod, { title: 'Виды продукции', labelW: 150, tip: tipRef });
     else ctx.$('t-products').innerHTML = '<div class="an-empty">Заказов к этому часу нет ни сегодня, ни обычно</div>';
@@ -597,11 +598,11 @@ ${fmtSigned(d.h)}` }),
 
     const n = T.arrived.today;
     ctx.$('t-places-cap').textContent = n ? `Анализ LLM есть у ${fmtN(T.analyzed)} из ${fmtN(n)} заказов дня.` : '';
-    const pl = T.places.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-accent)' : 'var(--an-s1)' }));
+    const pl = T.places.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-new)' : 'var(--an-s1)' }));
     if (!pl.length) ctx.$('t-places').innerHTML = `<div class="an-empty">${n ? 'Мест в заказах дня пока нет' : 'Заказов сегодня пока нет'}</div>`;
     else hbars(ctx.$('t-places'), pl, { title: 'Места сегодня', labelW: 190,
       tip: it => `<div class="t">${esc(it.label)}</div>${it.area ? `<div class="g">${esc(it.area)}</div>` : ''}` +
-        row('var(--an-accent)', 'Заказов сегодня', fmtN(it.value)) +
+        row('', 'Заказов сегодня', fmtN(it.value)) +
         row('', `В среднем в день за ${T.placeDays} дн.`, it.isNew ? 'не было' : fmt1(it.ref)) });
     ctx.$('t-places-t').innerHTML = table(['Место', 'Регион', 'Сегодня', 'В среднем в день'],
       T.places.map(p => [p.label, p.area || '', p.value, p.isNew ? 'новое' : fmt1(p.ref)]));
