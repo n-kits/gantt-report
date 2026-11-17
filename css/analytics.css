@@ -39,7 +39,6 @@
   --an-other: #C3C2B7;
   --an-water: #7FA7BF;       /* граф мест: акватории — приглушённый «водный» */
   --an-nocountry: #7A7770;   /* граф мест: места без страны */
-  --an-seq: #1C5CAB;         /* тепловая карта: один тон, прозрачность — величина */
   --an-good: #0CA30C;
   --an-critical: #D03B3B;
   --an-good-ink: #006300;
@@ -184,6 +183,7 @@
 .an svg text { fill: var(--an-muted); font-size: 11px; font-family: inherit; }
 .an svg text.lbl { fill: var(--an-ink-2); font-size: 12px; }
 .an svg text.val { fill: var(--an-ink); font-size: 12px; font-weight: 700; }
+.an svg rect.hc { stroke: rgba(11, 11, 11, .06); stroke-width: 1; }
 .an svg text.tot { fill: var(--an-ink); font-size: 11px; font-weight: 700; }
 .an svg text.tot.part { fill: var(--an-muted); }
 .an svg .gridline { stroke: var(--an-grid); stroke-width: 1; shape-rendering: crispEdges; }
@@ -194,7 +194,7 @@
 .an svg g.dim { opacity: .3; }
 /* «Сегодня»: черта «обычно» на столбиках, полоса и медиана обычных дней, линия сегодняшнего дня */
 .an svg line.ref { stroke: var(--an-ink); stroke-width: 2; }
-.an svg path.band { fill: var(--an-other); fill-opacity: .35; stroke: none; }
+.an svg path.t-band { fill: var(--an-other); fill-opacity: .35; stroke: none; }   /* не .band — так называются ленты Санки */
 .an svg path.median { fill: none; stroke: var(--an-ink-2); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .an svg path.today { fill: none; stroke: var(--an-accent); stroke-width: 2.5; stroke-linejoin: round; }
 .an svg circle.today-dot { fill: var(--an-accent); }

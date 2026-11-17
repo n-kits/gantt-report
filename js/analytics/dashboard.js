@@ -143,7 +143,9 @@
     const { M, st, list } = ctx;
     const el = ctx.$('days');
     const W = widthOf(el), H = 240, L = 34, R = 8, T = 18, B = 26;   // T — место под подпись «всего» у самого высокого
-    const auto = !st.gran || st.gran === 'auto';
+    // выбор шага — только в режиме «Весь архив»; на остальных периодах шаг всегда автоматический
+    const whole = st.from === M.firstDay && st.to === M.lastDay;
+    const auto = !whole || !st.gran || st.gran === 'auto';
     const gran = auto ? A.autoGran(st.from, st.to, W - L - R, MIN_BAND) : st.gran;
     const bs = A.buckets(st.from, st.to, gran);
     const shown = PRODUCTS.filter(p => !st.product || p.key === st.product);
@@ -164,6 +166,7 @@
       ctx.update({ product: st.product === b.dataset.p ? '' : b.dataset.p })));
     ctx.$('days-title').textContent = `Заказы ${GRAN_WORD[gran][1]}`;
     const gb = ctx.$('days-gran');
+    gb.hidden = !whole;
     gb.querySelectorAll('button').forEach(b => {
       b.setAttribute('aria-pressed', String((b.dataset.g === 'auto') === auto && (auto || b.dataset.g === gran)));
       b.onclick = () => ctx.setGran(b.dataset.g);
@@ -229,6 +232,14 @@
   }
 
   // тепловая карта: день недели × час регистрации
+  // палитра Reds (matplotlib / seaborn cmap="Reds", ColorBrewer): t 0…1 → цвет, линейно между опорными
+  const REDS = ['#fff5f0', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#a50f15', '#67000d']
+    .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+  function reds(t) {
+    const x = Math.max(0, Math.min(1, t)) * (REDS.length - 1), i = Math.min(REDS.length - 2, Math.floor(x)), f = x - i;
+    return `rgb(${REDS[i].map((c, k) => Math.round(c + (REDS[i + 1][k] - c) * f)).join(',')})`;
+  }
+
   function heat(ctx) {
     const el = ctx.$('heat');
     const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -240,9 +251,8 @@
     const items = [];
     m.forEach((r, d) => r.forEach((v, h) => {
       const i = items.push({ d, h, v }) - 1;
-      const op = v ? 0.12 + 0.88 * v / max : 0;
-      s += `<rect x="${L + h * cw + 1}" y="${T + d * ch + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" ` +
-        `fill="${v ? 'var(--an-seq)' : 'var(--an-grid)'}" fill-opacity="${v ? op.toFixed(3) : 0.6}"/>` +
+      // ноль — белый, остальное — по палитре; тонкая обводка, чтобы белые и светлые клетки не сливались с фоном
+      s += `<rect class="hc" x="${L + h * cw + 1}" y="${T + d * ch + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${v ? reds(v / max) : '#fff'}"/>` +
         `<rect class="hit" data-i="${i}" x="${L + h * cw}" y="${T + d * ch}" width="${cw}" height="${ch}"/>`;
     }));
     WD.forEach((w, d) => { s += `<text x="${L - 6}" y="${T + d * ch + ch / 2 + 4}" text-anchor="end">${w}</text>`; });
@@ -539,7 +549,7 @@ ${fmtSigned(d.h)}` }),
     for (let k = 0; k <= 24; k += 4) s += `<text x="${x(k)}" y="${H - 8}" text-anchor="middle">${hourLabel(k).slice(0, 2)}</text>`;
     const ref = pts.filter(p => p.med != null);
     if (ref.length) {
-      s += `<path class="band" d="M${ref.map(p => `${x(p.k)},${y(p.hi)}`).join('L')}L${ref.slice().reverse().map(p => `${x(p.k)},${y(p.lo)}`).join('L')}Z"/>`;
+      s += `<path class="t-band" d="M${ref.map(p => `${x(p.k)},${y(p.hi)}`).join('L')}L${ref.slice().reverse().map(p => `${x(p.k)},${y(p.lo)}`).join('L')}Z"/>`;
       s += `<path class="median" d="M${ref.map(p => `${x(p.k)},${y(p.med)}`).join('L')}"/>`;
     }
     const tod = pts.filter(p => p.today != null);
