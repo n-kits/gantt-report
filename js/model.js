@@ -117,18 +117,23 @@
     return null;
   }
 
+  // номер задачи — последнее «#цифры» в названии; после него бывает ещё текст: «сделать в растр #1220740 КАРТА»
+  const ID_RE = /\s*#(\d+)(?![\s\S]*#\d)/;
+
   function extractId(name) {
-    if (!name) return '';
-    const parts = String(name).split('#');
-    return parts.length > 1 ? parts[parts.length - 1].trim() : '';
+    const m = ID_RE.exec(String(name || ''));
+    return m ? m[1] : '';
+  }
+
+  // название без номера: «сделать в растр #1220740 КАРТА» → «сделать в растр КАРТА»
+  function stripId(name) {
+    return String(name || '').replace(ID_RE, ' ').replace(/\s+/g, ' ').trim();
   }
 
   function shortName(name, maxlen) {
     maxlen = maxlen || 62;
     if (!name) return '';
-    let s = String(name);
-    const hash = s.lastIndexOf('#');
-    if (hash >= 0) s = s.slice(0, hash).trim();
+    let s = stripId(name);
     const colon = s.indexOf(':');
     if (colon >= 0 && s.slice(0, colon).includes('(Р24)')) s = s.slice(colon + 1).trim();
     for (const junk of ['Карта_плазма_', 'Карта СВО плазма_', 'Стандартная карта на плазму_', '_карта сво_', ' в растр']) {
@@ -379,7 +384,7 @@
   const api = {
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_UNPROC,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
-    parseDt, extractId, shortName, guessNowFromFilename,
+    parseDt, extractId, stripId, shortName, guessNowFromFilename,
     loadTasks, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
     fmtFull, fmtDMHM, taskUrl,
   };

@@ -134,19 +134,19 @@ def parse_now_arg(s: str) -> datetime:
     return dt
 
 
+# номер задачи — последнее «#цифры»; после него бывает ещё текст: «сделать в растр #1220740 КАРТА»
+ID_RE = re.compile(r"\s*#(\d+)(?![\s\S]*#\d)")
+
+
 def extract_id(name: str) -> str:
-    if not name:
-        return ""
-    parts = str(name).split("#")
-    return parts[-1].strip() if len(parts) > 1 else ""
+    m = ID_RE.search(str(name or ""))
+    return m.group(1) if m else ""
 
 
 def short_name(name: str, maxlen: int = 62) -> str:
     if not name:
         return ""
-    s = str(name)
-    if "#" in s:
-        s = s.rsplit("#", 1)[0].strip()
+    s = " ".join(ID_RE.sub(" ", str(name)).split())
     if ":" in s and "(Р24)" in s.split(":")[0]:
         s = s.split(":", 1)[1].strip()
     for junk in ("Карта_плазма_", "Карта СВО плазма_", "Стандартная карта на плазму_", "_карта сво_", " в растр"):

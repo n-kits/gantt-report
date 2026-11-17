@@ -100,7 +100,7 @@
     }
     const finish = t.finish ? M.fmtFull(t.finish) : '— (не завершена)';
     return `
-      <div class="tt-title">${t.id ? `#${esc(t.id)} ` : ''}${esc(t.name.replace(/\s*#[^#]*$/, ''))}</div>
+      <div class="tt-title">${t.id ? `#${esc(t.id)} ` : ''}${esc(M.stripId(t.name))}</div>
       <table>
         <tr><th>Проект</th><td>${esc(t.project || '—')}</td></tr>
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
