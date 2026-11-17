@@ -20,23 +20,27 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* не критично */ } },
   };
 
-  // Строки ленты (порядок Bitrix: название, статус, регистрация, …, проект, вид продукции) → по ID
-  function rowsById(rows) {
-    const out = {};
+  // номер задачи из названия «… #1234567 …» (как в ленте, GanttModel.extractId)
+  const idOf = name => (root.GanttModel ? root.GanttModel.extractId(name)
+    : ((/#(\d+)(?![\s\S]*#\d)/.exec(String(name || '')) || [])[1] || ''));
+
+  // Все задачи ленты (порядок Bitrix: название, статус, регистрация, …, проект, вид продукции) + geo.items.
+  // Задача без анализа LLM (ещё не разобрана, не удалось) — тоже строка, с пометкой pending.
+  function fromLive(geo, rows) {
+    const byId = {};
+    for (const it of (geo && geo.items) || []) byId[it.id] = it;
+    const out = [], seen = new Set();
     for (const r of rows || []) {
-      const m = /#(\d+)\s*$/.exec(String(r[0] || ''));
-      if (m) out[m[1]] = r;
+      const id = idOf(r[0]);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const base = { id, name: r[0] || `#${id}`, start: r[2] || '', project: r[6] || '', product: r[7] || '' };
+      out.push(byId[id] ? Object.assign(base, byId[id]) : Object.assign(base, { pending: true }));
+    }
+    for (const it of (geo && geo.items) || []) {          // анализ есть, а строки в ленте нет — всё равно показать
+      if (!seen.has(it.id)) out.push(Object.assign({ name: `#${it.id}`, project: '', product: '' }, it));
     }
     return out;
-  }
-
-  // geo.items + строки ленты → записи таблицы
-  function fromLive(geo, rows) {
-    const byId = rowsById(rows);
-    return ((geo && geo.items) || []).map(it => {
-      const r = byId[it.id] || [];
-      return Object.assign({ name: r[0] || `#${it.id}`, project: r[6] || '', product: r[7] || '' }, it);
-    });
   }
 
   function toponymHtml(t) {
@@ -60,10 +64,13 @@
       const tops = (it.toponyms || []).map(toponymHtml).join('');
       const url = root.GanttModel && root.GanttModel.taskUrl(it.id);
       const id = url ? `<a class="task-link" href="${esc(url)}" target="_blank" rel="noopener" title="Открыть в Bitrix">${esc(it.id)}</a>` : esc(it.id);
-      return `<tr><td class="id">${id}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
+      const analysis = it.pending
+        ? '<td colspan="2" class="pending-note">анализа пока нет — тема, тональность и топонимы появятся после разбора</td>'
+        : `<td><div>${esc(meta)}</div><div class="meta">${esc(it.sentiment)}</div></td>` +
+          `<td><ul>${tops || '<li class="miss">—</li>'}</ul></td>`;
+      return `<tr${it.pending ? ' class="pending" title="Задачу ещё не разобрала модель"' : ''}><td class="id">${id}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
         `<td><div class="nm">${esc(it.name)}</div><div class="meta">${esc(it.project)} · ${esc(it.product)}</div></td>` +
-        `<td><div>${esc(meta)}</div><div class="meta">${esc(it.sentiment)}</div></td>` +
-        `<td><ul>${tops || '<li class="miss">—</li>'}</ul></td></tr>`;
+        `${analysis}</tr>`;
     }).join('');
     return `<table class="geo-tbl"><thead><tr><th>ID</th>` +
       `<th class="sortable" data-sort="start" title="Сортировать по времени регистрации">Регистрация ${arrow}</th>` +
@@ -73,7 +80,11 @@
   // Смонтировать таблицу в контейнер; повторный вызов — перерисовка с новыми данными
   function mount(box, items) {
     const count = document.getElementById('geo-table-count');
-    if (count) count.textContent = items.length;
+    const pending = items.filter(it => it.pending).length;
+    if (count) {
+      count.textContent = pending ? `${items.length} · без анализа ${pending}` : items.length;
+      count.title = pending ? 'Задачи, которые модель ещё не разобрала, подсвечены в таблице' : '';
+    }
     let dir = store.get(SORT_KEY) === 'desc' ? 'desc' : 'asc';
     box.innerHTML = render(items, dir);
     box.onclick = e => {

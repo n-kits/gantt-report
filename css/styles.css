@@ -368,6 +368,10 @@ table.geo-tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; backg
 .geo-tbl .km.far { color: #B42318; font-weight: 700; }
 .geo-tbl .coord { font-size: 11px; color: #9CA3AF; }
 .geo-tbl .miss { color: var(--gray); }
+/* задача без анализа LLM: строка есть, тема и топонимы — позже */
+.geo-tbl tr.pending td { background: #FBF3E4; }
+.geo-tbl tr.pending .id { box-shadow: inset 3px 0 0 var(--accent); }
+.geo-tbl .pending-note { color: var(--gray); font-style: italic; }
 .src { font-size: 11px; font-style: normal; padding: 0 5px; border-radius: 3px; background: #E5E7EB; color: var(--text); }
 .src.cache { background: #D8EDE0; }
 .src.nominatim { background: #DBE7F5; }
