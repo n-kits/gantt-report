@@ -52,6 +52,7 @@
         sourceName: state.sourceName,
         kind: state.kind,
         now: state.now ? state.now.getTime() : null,
+        from: state.from ? state.from.getTime() : null,
         step: state.step,
         maxCols: state.maxCols,
       }));
@@ -67,6 +68,7 @@
         sourceName: s.sourceName || '',
         kind: s.kind || '',
         now: s.now != null && !isNaN(new Date(s.now)) ? new Date(s.now) : null,
+        from: s.from != null && !isNaN(new Date(s.from)) ? new Date(s.from) : null,
       });
       // сохранённые шаг и лимит действуют, только пока поля включены
       if (FEATURES.viewControls) {
@@ -92,6 +94,7 @@
     try {
       const res = await src.read(file);
       state.rows = res.rows;
+      state.from = null;
       state.sourceName = res.sourceName;
       state.kind = res.kind;
       state.now = (res.now && M.parseDt(res.now)) || M.guessNowFromFilename(res.sourceName) || new Date();
@@ -124,6 +127,7 @@
     try {
       timeline = M.buildTimeline(state.rows, {
         now: state.now || new Date(),
+        from: state.from || null,
         step: state.step,
         maxCols: state.maxCols === 'all' ? Infinity : +state.maxCols,
       });
@@ -245,8 +249,10 @@
 
   // точка входа для других источников (живые данные Bitrix и т.п.)
   root.GanttApp = {
-    loadRows(rows, sourceName, now, kind) {
+    // from — начало окна (живая лента с задачами, перенесёнными с прошлых дней)
+    loadRows(rows, sourceName, now, kind, from) {
       state.rows = rows;
+      state.from = from || null;
       state.sourceName = sourceName || 'данные';
       state.kind = kind || 'external';
       state.now = now || M.guessNowFromFilename(sourceName) || new Date();

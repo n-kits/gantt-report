@@ -132,7 +132,8 @@
     }
     shownKey = envelope.dataAt;
     const now = M.parseDt(payload.now) || new Date(envelope.dataAt);
-    App.loadRows(payload.rows, payload.sourceName || envelope.source, now, 'live');
+    const from = payload.carried && payload.carried.length && payload.range ? M.parseDt(payload.range.from) : null;
+    App.loadRows(payload.rows, payload.sourceName || envelope.source, now, 'live', from);
     // анализ через LLM выключен в сборщике — карту и таблицу не показываем, пока его не включат
     const geo = payload.geo && payload.geo.llm !== false ? payload.geo : null;
     if (root.GanttMap) root.GanttMap.show(geo, now);

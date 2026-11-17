@@ -52,7 +52,9 @@
           const ol = r.barOutline
             ? ` ol${h === r.startIdx ? ' ol-l' : ''}${h === r.endIdx ? ' ol-r' : ''}` : '';
           const olVar = r.barOutline ? `;--ol:${r.barOutline}` : '';
-          out.push(`<td class="s on${ol}" style="background:${r.barColor};color:${r.barMark}${olVar}">${dl ? '◆' : ''}</td>`);
+          // задача с прошлых дней: полоса уходит за левый край — стрелка в первой ячейке
+          const cut = r.cutLeft && h === r.startIdx;
+          out.push(`<td class="s on${ol}${cut ? ' cut-l' : ''}" style="background:${r.barColor};color:${r.barMark}${olVar}">${dl ? '◆' : cut ? '←' : ''}</td>`);
         } else if (dl) {
           out.push('<td class="s dl">◆</td>');
         } else {
@@ -106,7 +108,7 @@
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
         <tr><th>Вид продукции</th><td>${esc(t.product)}</td></tr>
         <tr><th>Статус</th><td><span class="tt-dot" style="background:${r.barColor}"></span>${esc(t.status)} ${note}</td></tr>
-        <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}</td></tr>
+        <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}${r.cutLeft ? ' <span class="tt-carry">раньше окна ленты — показана, пока не завершена</span>' : ''}</td></tr>
         <tr><th>Завершение</th><td>${finish}</td></tr>
         <tr><th>Крайний срок</th><td>${M.fmtFull(t.deadline)}</td></tr>
         <tr><th>Длительность</th><td>${fmtHours(t.durationH)}</td></tr>

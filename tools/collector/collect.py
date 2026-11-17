@@ -55,6 +55,7 @@ DEFAULTS = {
     "tasks_url": "https://crm.emg24.ru/company/personal/user/609/tasks/?F_FILTER_SWITCH_PRESET=2460",
     "source_name": "Bitrix · ВСЕ КАРТЫ Р24",
     "days": 3,                  # диапазон: последние N суток по времени регистрации
+    "carry_days": 30,           # незавершённые задачи из прошлых дней (до N суток) остаются на ленте; 0 — нет
     "day_start_hour": 4,        # сутки начинаются в 04:00, как ось ленты
     "utc_offset_hours": 3,      # время пользователя Bitrix (МСК)
     "interval_min": 30,         # период запуска в Планировщике
@@ -351,6 +352,10 @@ def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             res = open_range(page, cfg, frm, to)
+            try:
+                add_carried(page, cfg, res, frm)
+            except CollectError as e:       # лента окна важнее: без переноса, повторим в следующий запуск
+                log.warning("Перенос незавершённых задач не удался: %s: %s", e.code, e)
             if geo_state is not None:
                 # полные описания новых задач — пока открыт браузер с сессией Bitrix
                 import geo
@@ -361,6 +366,58 @@ def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
             return res
         finally:
             ctx.close()
+
+
+def still_open(status: str, finish: str) -> bool:
+    """Задача ещё идёт: не «Завершена» и не «На рассмотрении» с датой завершения (работа сдана).
+    По статусу, а не по дате: «Выполняется» бывает с датой завершения — вернули с рассмотрения."""
+    status = (status or "").strip()
+    return status != "Завершена" and not (status == "На рассмотрении" and (finish or "").strip())
+
+
+def carry_candidates(cfg: dict, frm: datetime) -> list[tuple[str, str]]:
+    """Незавершённые задачи архива (still_open), зарегистрированные до окна, не раньше carry_days суток: (номер, день)."""
+    import archive
+    n, path = int(cfg.get("carry_days") or 0), APP_DIR / "archive.sqlite"
+    if n <= 0 or not cfg.get("archive") or not path.exists():
+        return []
+    db = archive.connect(path)
+    try:
+        rows = db.execute("SELECT id, day, status, finish FROM tasks WHERE day >= ? AND day < ?",
+                          ((frm.date() - timedelta(days=n)).isoformat(), frm.date().isoformat())).fetchall()
+        return [(i, d) for i, d, st, fin in rows if still_open(st, fin)]
+    finally:
+        db.close()
+
+
+def add_carried(page, cfg: dict, res: dict, frm: datetime) -> None:
+    """Задача выпала из окна по дате регистрации, но ещё не завершена — её полоса тянется дальше.
+    Перечитываем из Bitrix дни таких задач и добавляем в ленту их текущие строки (только still_open).
+    Bitrix задачу не вернул (отменена, ушла из фильтра) — в ленту не попадает; завершилась — выпадет сама."""
+    carry = carry_candidates(cfg, frm)
+    if not carry:
+        return
+    want = {i for i, _ in carry}
+    since = datetime.combine(date.fromisoformat(min(d for _, d in carry)), dtime(cfg["day_start_hour"]))
+    old = open_range(page, cfg, since, frm, cfg.get("history_url"))
+    have = {t["id"] for t in res.get("tasks", [])}
+    added, closed = [], {"rows": [], "tasks": []}
+    for row, t in zip(old["rows"], old.get("tasks", [])):
+        if t["id"] not in want or t["id"] in have:
+            continue
+        if not still_open(row[1], row[3]):  # статус, завершение: в ленту не нужна, но архиву — новый статус
+            closed["rows"].append(row)
+            closed["tasks"].append(t)
+            continue
+        res["rows"].append(row)
+        res["tasks"].append(t)
+        added.append(t["id"])
+    res["count"] = len(res["rows"])
+    res["carried"] = added
+    res["carry_closed"] = closed
+    log.info("Перенос с прошлых дней: незавершённых задач %s%s", len(added), f" ({', '.join(added)})" if added else "")
+    if len(added) < len(want - have):
+        log.info("Не перенесены (завершены или Bitrix не вернул): %s", ", ".join(sorted(want - have - set(added))))
 
 
 def day_chunks(cfg: dict, d_from: date, d_to: date, now: datetime) -> list[tuple[datetime, datetime, list[str]]]:
@@ -662,6 +719,8 @@ def run(cfg: dict, dry_run: bool) -> int:
                 except Exception:  # noqa: BLE001 — архив не должен мешать публикации
                     log.exception("Архив не обновлён")
         payload = {"rows": res["rows"], "now": res["now"], "range": res["range"], "sourceName": cfg["source_name"]}
+        if res.get("carried"):
+            payload["carried"] = res["carried"]     # номера задач с прошлых дней: лента рисует их от левого края
         if geo_part is not None:
             payload["geo"] = geo_part
         envelope.update({
@@ -763,6 +822,8 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
     db = archive.connect(APP_DIR / "archive.sqlite")
     try:
         n = archive.update(db, cfg, res, geo_part, texts)
+        if res.get("carry_closed", {}).get("rows"):       # перенесённые задачи, которые завершились
+            n += archive.update(db, cfg, res["carry_closed"], None, {})
         frm = datetime.strptime(res["range"]["from"], "%d.%m.%Y %H:%M")
         # дни окна перечитаны целиком — задачи, пропавшие из Bitrix, убираем
         days = [(frm.date() + timedelta(days=i)).isoformat() for i in range(cfg["days"])]

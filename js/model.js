@@ -239,7 +239,10 @@
     const starts = tasks.filter(t => t.start).map(t => t.start);
     const ends = tasks.filter(t => t.actualEnd).map(t => t.actualEnd);
     if (!starts.length) throw new Error('Нет ни одной даты регистрации');
-    const first = new Date(Math.min(...starts));
+    // opts.from — начало окна сборщика: задачи, зарегистрированные раньше (перенесены с прошлых дней
+    // незавершёнными), ленту не растягивают — их полоса начинается от левого края
+    const minStart = new Date(Math.min(...starts));
+    const first = opts.from && opts.from > minStart ? new Date(opts.from.getTime()) : minStart;
     const last = new Date(Math.max(...ends, now));
     // 04:00 дня первой задачи; если задача раньше 04:00 — 04:00 предыдущего дня
     const cand = new Date(first.getFullYear(), first.getMonth(), first.getDate(), DAY_START_HOUR, 0, 0);
@@ -353,6 +356,7 @@
         startIdx,
         endIdx,
         dlIdx,
+        cutLeft: !!(t.start && t.start < base),
       };
     });
 

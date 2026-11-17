@@ -170,6 +170,18 @@
     eq([tl.rows[0].startIdx, tl.rows[0].endIdx], [1, 2]);
   });
 
+  test('задача с прошлых дней: окно от opts.from, полоса от левого края со стрелкой', () => {
+    const old = ['Факты (Р24): Старая карта #90', 'Зарегистрирована', '10.09.26 15:00:00', '', 'Петров Б.', '', 'Факты (Р24)', 'Плазма', ''];
+    const tl = M.buildTimeline(DATA.concat([old]), { now: NOW, step: 1, from: d(2026, 9, 14, 4, 0) });
+    eq(iso(tl.base), '2026-9-14 4:0:0', 'окно не растянуто до 10.09');
+    const r = tl.rows.find(x => x.task.id === '90');
+    eq([r.startIdx, r.cutLeft, r.endIdx], [0, true, 8]);
+    eq(tl.rows.filter(x => x.cutLeft).length, 1, 'у задач окна стрелки нет');
+    eq(window.GanttTimeline.render(tl).includes('cut-l'), true);
+    const noFrom = M.buildTimeline(DATA.concat([old]), { now: NOW, step: 1, maxCols: Infinity });
+    eq(iso(noFrom.base), '2026-9-10 4:0:0', 'без from — как раньше');
+  });
+
   window.__testResults = results;
   const ok = results.filter(r => r.ok).length;
   const out = document.getElementById('out');
