@@ -169,6 +169,7 @@
     <div class="an-msg" id="an-msg" hidden></div>
     <div class="an-bar" role="group" aria-label="Фильтры">
       <div class="an-seg" id="an-presets" role="group" aria-label="Период">
+        <button type="button" data-days="today" hidden title="Сегодня против того же дня недели прошлых недель, к тому же часу">Сегодня</button>
         <button type="button" data-days="7">7 дней</button>
         <button type="button" data-days="14">14 дней</button>
         <button type="button" data-days="30">30 дней</button>
@@ -192,6 +193,47 @@
       <span id="an-period"></span>
       <span id="an-status"></span>
       <span id="an-updated"></span>
+    </div>
+
+    <!-- Сегодня: день против того же дня недели прошлых недель, к тому же часу (кнопка «Сегодня») -->
+    <div class="an-sec" id="an-s-today" hidden>
+      <h2>Сегодня <small id="an-t-cap"></small></h2>
+      <div class="an-grid">
+        <section class="an-card w12"><div class="kpis" id="an-t-kpis"></div></section>
+        <section class="an-card">
+          <h3>Поступление заказов</h3>
+          <p class="an-cap">Нарастающим итогом с 04:00, по времени регистрации.</p>
+          <div class="an-legend an-t-legend"></div>
+          <div class="an-chart" id="an-t-arrived"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-t-arrived-t"></div></details>
+        </section>
+        <section class="an-card">
+          <h3>Одновременно в работе</h3>
+          <p class="an-cap">Зарегистрированы и ещё не сданы («Завершена» или «На рассмотрении»), в том числе с прошлых дней.</p>
+          <div class="an-legend an-t-legend"></div>
+          <div class="an-chart" id="an-t-open"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-t-open-t"></div></details>
+        </section>
+        <section class="an-card">
+          <h3>Виды продукции к этому часу</h3>
+          <p class="an-cap">Столбик — сегодня, черта — медиана того же дня недели к тому же часу.</p>
+          <div class="an-chart" id="an-t-products"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-t-products-t"></div></details>
+        </section>
+        <section class="an-card">
+          <h3>Проекты к этому часу</h3>
+          <p class="an-cap">Столбик — сегодня, черта — медиана того же дня недели к тому же часу.</p>
+          <div class="an-chart" id="an-t-projects"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-t-projects-t"></div></details>
+        </section>
+        <section class="an-card w12">
+          <h3>Места сегодня</h3>
+          <p class="an-cap">Сколько заказов дня упоминают место; черта — сколько в среднем в день за 4 прошлые недели;
+            «новое» — за 4 недели не встречалось. <span id="an-t-places-cap"></span></p>
+          <div class="an-chart" id="an-t-places"></div>
+          <details class="tbl"><summary>Таблица</summary><div class="scroll" id="an-t-places-t"></div></details>
+        </section>
+      </div>
     </div>
 
     <!-- Поток -->

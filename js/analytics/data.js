@@ -86,6 +86,97 @@
     return ts.length ? { oldest: ts[0], newest: ts[ts.length - 1] } : null;
   }
 
+  // --- «Сегодня»: день против обычного такого же дня недели --------------------
+  // Рабочие сутки — с 04:00. «Обычный» — тот же день недели за REF_WEEKS прошлых недель (поток сильно зависит
+  // от дня недели: в понедельник ~23 заказа, в субботу ~2), сравнение — к тому же часу суток.
+  const DAY_START = 4, REF_WEEKS = 8, OPEN_MAX_DAYS = 30, PLACE_REF_DAYS = 28;
+  const WEEKDAY_DAT = ['воскресеньям', 'понедельникам', 'вторникам', 'средам', 'четвергам', 'пятницам', 'субботам'];
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoDay = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const workdayOf = d => isoDay(new Date(d.getTime() - DAY_START * HOUR));
+  const dayStart = s => new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), DAY_START);
+  // квантиль с интерполяцией (q = 0.5 — медиана)
+  function quantile(a, q) {
+    if (!a.length) return null;
+    const s = [...a].sort((x, y) => x - y), p = (s.length - 1) * q, i = Math.floor(p);
+    return s[i] + (s[Math.min(i + 1, s.length - 1)] - s[i]) * (p - i);
+  }
+  const spread = a => ({ med: quantile(a, 0.5), lo: quantile(a, 0.25), hi: quantile(a, 0.75), n: a.length });
+  // когда заказ сдан: «Завершена» / «На рассмотрении» с датой завершения; «Выполняется» с датой — вернули, ещё идёт
+  const doneAt = t => DONE.includes(t.status) && t.finishD ? t.finishD : null;
+
+  // в работе в момент T: зарегистрирован (не раньше OPEN_MAX_DAYS) и ещё не сдан; просрочен — крайний срок прошёл
+  function openAt(list, T) {
+    const lo = T.getTime() - OPEN_MAX_DAYS * DAY;
+    let open = 0, late = 0;
+    for (const t of list) {
+      if (!t.startD || t.startD > T || t.startD.getTime() < lo) continue;
+      const e = doneAt(t);
+      if (e && e <= T) continue;
+      open++;
+      if (t.deadlineD && t.deadlineD < T) late++;
+    }
+    return { open, late };
+  }
+
+  function today(model, now, dims) {
+    const list = dims ? model.tasks.filter(dims) : model.tasks;
+    const day = workdayOf(now), base = dayStart(day);
+    const h = Math.max(0, Math.min(24, (now - base) / HOUR));
+    const refs = [];
+    for (let k = 1; k <= REF_WEEKS; k++) { const d = addDays(day, -7 * k); if (d >= model.firstDay) refs.push(d); }
+    const byDay = new Map();
+    list.forEach(t => { if (!byDay.has(t.day)) byDay.set(t.day, []); byDay.get(t.day).push(t); });
+    const at = (d, hh) => new Date(dayStart(d).getTime() + hh * HOUR);
+    const arrived = (d, hh) => { const T = at(d, hh); return (byDay.get(d) || []).filter(t => t.startD && t.startD < T); };
+
+    // кривые по часам 0…24 от 04:00: сегодня — только до «сейчас», последняя точка — сам момент «сейчас»
+    const curve = f => {
+      const out = [];
+      for (let k = 0; k <= 24; k++) {
+        const ref = spread(refs.map(d => f(d, k)));
+        out.push(Object.assign({ k, today: k <= h ? f(day, k) : null }, ref));
+      }
+      if (h < 24 && h > Math.floor(h)) out.splice(Math.floor(h) + 1, 0, Object.assign({ k: h, today: f(day, h), now: true }, spread(refs.map(d => f(d, h)))));
+      return out;
+    };
+    const arrivedCurve = curve((d, hh) => arrived(d, hh).length);
+    const openCurve = curve((d, hh) => openAt(list, at(d, hh)).open);
+
+    const nowT = arrived(day, h);
+    const cur = openAt(list, now);
+    const refOpen = refs.map(d => openAt(list, at(d, h)));
+
+    // разрезы «к этому часу»: сегодня и медиана тех же дней недели
+    const slice = key => {
+      const t = countBy(nowT, key), r = refs.map(d => countBy(arrived(d, h), key));
+      const keys = new Set([...t.keys(), ...r.flatMap(m => [...m.keys()])]);
+      return [...keys].map(k => ({ key: k, value: t.get(k) || 0, ref: quantile(r.map(m => m.get(k) || 0), 0.5) || 0 }))
+        .filter(x => x.value || x.ref >= 0.5)
+        .sort((a, b) => b.value - a.value || b.ref - a.ref);
+    };
+
+    // места дня против «в среднем в день» за PLACE_REF_DAYS дней до сегодня (любые дни недели)
+    const placeFrom = addDays(day, -PLACE_REF_DAYS);
+    const placeDays = Math.max(1, Math.min(PLACE_REF_DAYS, span(model.firstDay > placeFrom ? model.firstDay : placeFrom, addDays(day, -1))));
+    const past = countBy(list.filter(t => t.day >= placeFrom && t.day < day), t => t.pids);
+    const places = [...countBy(nowT, t => t.pids).entries()].map(([id, v]) => {
+      const p = model.places[id], n = past.get(id) || 0;
+      return { key: id, label: p.name, area: p.area, value: v, ref: n / placeDays, isNew: !n };
+    }).sort((a, b) => b.value - a.value || a.ref - b.ref);
+
+    return {
+      day, now, h, refs, refWord: WEEKDAY_DAT[dayStart(day).getDay()], placeDays,
+      arrived: Object.assign({ today: nowT.length }, spread(refs.map(d => arrived(d, h).length))),
+      fullDay: spread(refs.map(d => (byDay.get(d) || []).length)),
+      open: Object.assign({ today: cur.open }, spread(refOpen.map(x => x.open))),
+      late: Object.assign({ today: cur.late }, spread(refOpen.map(x => x.late))),
+      analyzed: nowT.filter(t => t.an).length,
+      curves: { arrived: arrivedCurve, open: openCurve },
+      products: slice(t => t.pkey), projects: slice(t => t.project), places,
+    };
+  }
+
   // --- графы связей ---------------------------------------------------------
   // пары узлов, встречающихся в одном заказе: [{a, b, w}]
   function pairs(lists) {
@@ -121,6 +212,7 @@
   root.GanttAnalytics = Object.assign(root.GanttAnalytics || {}, {
     HOUR, DAY, PRODUCTS, WIN,
     prepare, placeGroup, inRange, byDims, topWindow, statusAt, pairs, graphPeople, graphPlaces,
-    util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy },
+    today, openAt, workdayOf, DAY_START, REF_WEEKS,
+    util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, quantile },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

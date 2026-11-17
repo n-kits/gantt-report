@@ -18,9 +18,20 @@
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
+  const DEFAULTS = { mode: '', days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
 
   const $ = id => document.getElementById('an-' + id);
+
+  // «Сегодня» — пока на пробу, за флагом: ?today=1 включает кнопку в этом браузере (запоминается), ?today=0 — убирает
+  const TODAY_KEY = 'gantt-analytics.today';
+  const todayOn = (() => {
+    const q = new URLSearchParams(location.search).get('today');
+    try {
+      if (q === '1') localStorage.setItem(TODAY_KEY, '1');
+      else if (q === '0') localStorage.removeItem(TODAY_KEY);
+      return localStorage.getItem(TODAY_KEY) === '1';
+    } catch (e) { return q === '1'; }
+  })();
   let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, sankeyWait = null, mounted = false;
 
   // --- состояние ------------------------------------------------------------
@@ -44,7 +55,7 @@
   }
 
   function update(patch) {
-    if ('from' in patch || 'to' in patch) { st.winEnd = null; st.follow = false; st.len = null; }
+    if ('from' in patch || 'to' in patch) { st.winEnd = null; st.follow = false; st.len = null; st.mode = ''; }
     Object.assign(st, patch);
     sync(); render();
   }
@@ -63,16 +74,18 @@
     $('from').value = st.from; $('to').value = st.to; $('project').value = st.project; $('product').value = st.product;
     const days = span(st.from, st.to);
     document.querySelectorAll('#an-presets button').forEach(b => {
+      if (b.dataset.days === 'today') { b.setAttribute('aria-pressed', String(st.mode === 'today')); return; }
       const d = +b.dataset.days;
-      b.setAttribute('aria-pressed', String(st.to === M.lastDay && (d ? days === d : st.from === M.firstDay)));
+      b.setAttribute('aria-pressed', String(st.mode !== 'today' && st.to === M.lastDay && (d ? days === d : st.from === M.firstDay)));
     });
     save();
   }
 
   function bind() {
     document.querySelectorAll('#an-presets button').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.days === 'today') { st.mode = 'today'; sync(); render(); return; }
       const d = +b.dataset.days;
-      Object.assign(st, { to: M.lastDay, from: d ? addDays(M.lastDay, 1 - d) : M.firstDay, follow: true, len: d || 'all', winEnd: null });
+      Object.assign(st, { mode: '', to: M.lastDay, from: d ? addDays(M.lastDay, 1 - d) : M.firstDay, follow: true, len: d || 'all', winEnd: null });
       sync(); render();
     }));
     $('from').addEventListener('change', e => { if (e.target.value) update({ from: e.target.value }); });
@@ -81,7 +94,7 @@
     $('product').addEventListener('change', e => update({ product: e.target.value }));
     $('reset').addEventListener('click', () => {
       const keep = { beta: st.beta, betaPlaces: st.betaPlaces, minw: st.minw };
-      st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null });
+      st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null, mode: '' });
       sync(); render();
     });
     // разделы — прокруткой, без смены адреса (адрес занят вкладкой)
@@ -106,6 +119,8 @@
     document.querySelectorAll('#an-margin-view button').forEach(b => b.addEventListener('click', () => { st.marginView = b.dataset.v; save(); render(); }));
     document.querySelectorAll('#an-margin-rows button').forEach(b => b.addEventListener('click', () => { st.marginRows = b.dataset.r; save(); render(); }));
     document.querySelectorAll('#an-sankey-mode button').forEach(b => b.addEventListener('click', () => { st.sankeyMode = b.dataset.m; save(); render(); }));
+    // «Сегодня»: «к этому часу» сдвигается со временем — перерисовка раз в минуту, пока вкладка на виду
+    setInterval(() => { if (visible && st.mode === 'today' && M && document.visibilityState === 'visible') render(); }, 60000);
     let rt;
     addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (visible) render(); else dirty = true; }, 150); });
   }
@@ -113,9 +128,9 @@
   // --- отрисовка ------------------------------------------------------------
   const filtered = () => M.tasks.filter(t => A.inRange(t, st.from, st.to) && A.byDims(st)(t));
 
-  function status() {
-    const s = A.statusAt(M, st.from, st.to);
-    const parts = [`${dmy(st.from)} — ${dmy(st.to)}`];
+  function status(day) {
+    const s = A.statusAt(M, day || st.from, day || st.to);
+    const parts = [day ? `Сегодня, ${dmy(day)}` : `${dmy(st.from)} — ${dmy(st.to)}`];
     if (st.project) parts.push(st.project);
     if (st.product) parts.push(A.PRODUCTS.find(p => p.key === st.product).label);
     $('period').textContent = parts.join(' · ');
@@ -231,8 +246,20 @@
   function render() {
     if (!M) return;
     // скрыта (или ещё нулевой ширины) — нарисуем при показе: иначе графики возьмут минимальную ширину
-    if (!visible || !$('kpis').offsetWidth) { dirty = true; return; }
+    // разделы режима — до проверки ширины: она смотрит на KPI того раздела, который сейчас покажем
+    const today = st.mode === 'today';
+    ['flow', 'terms', 'people', 'geo'].forEach(k => { document.getElementById('an-s-' + k).hidden = today; });
+    $('s-today').hidden = !today;
+    $('nav').hidden = today;
+    if (!visible || !$(today ? 't-kpis' : 'kpis').offsetWidth) { dirty = true; return; }
     dirty = false;
+    if (today) {
+      // «сейчас» — часы браузера: данные приходят каждые 15 минут, файл переписывается только при изменениях
+      const T = A.today(M, new Date(), A.byDims(st));
+      status(T.day);
+      D.todayView({ M, st, T, $, update });
+      return;
+    }
     const ctx = { M, st, list: filtered(), $, update, roleColor, loadPlot: ensurePlot, loadSankey: ensureSankey };
     marginControls();
     status();
@@ -247,6 +274,9 @@
     if (mounted) return;
     mounted = true;
     st = load();
+    if (!todayOn) st.mode = '';
+    const tb = document.querySelector('#an-presets button[data-days="today"]');
+    if (tb) tb.hidden = !todayOn;
     bind();
   }
   function setData(payload) {

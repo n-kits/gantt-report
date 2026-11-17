@@ -71,6 +71,8 @@
 .an-seg { display: inline-flex; border: 1px solid var(--an-axis); border-radius: 6px; overflow: hidden; }
 .an-seg button { font: inherit; font-size: 13px; padding: 4px 10px; border: 0; background: transparent; color: var(--an-ink-2); cursor: pointer; }
 .an-seg button + button { border-left: 1px solid var(--an-axis); }
+.an-seg button[hidden] { display: none; }
+.an-seg button[hidden] + button { border-left: 0; }
 .an-seg button:hover { background: var(--an-hover); }
 .an-seg button[aria-pressed="true"] { background: var(--an-ink); color: var(--an-surface); font-weight: 700; }
 .an-link { font: inherit; font-size: 13px; background: none; border: 0; color: var(--an-accent); cursor: pointer; padding: 0; }
@@ -188,6 +190,17 @@
 .an svg .hit.click { cursor: pointer; }
 .an svg .hit:hover { fill: var(--an-hover); }
 .an svg g.dim { opacity: .3; }
+/* «Сегодня»: черта «обычно» на столбиках, полоса и медиана обычных дней, линия сегодняшнего дня */
+.an svg line.ref { stroke: var(--an-ink); stroke-width: 2; }
+.an svg path.band { fill: var(--an-other); fill-opacity: .35; stroke: none; }
+.an svg path.median { fill: none; stroke: var(--an-ink-2); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.an svg path.today { fill: none; stroke: var(--an-accent); stroke-width: 2.5; stroke-linejoin: round; }
+.an svg circle.today-dot { fill: var(--an-accent); }
+.an svg line.now { stroke: var(--an-accent); stroke-width: 1; stroke-dasharray: 2 3; }
+.an-nav[hidden], .an-sec[hidden] { display: none; }
+.an-t-legend .ln { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--an-accent); vertical-align: middle; margin-right: 6px; }
+.an-t-legend .ln.med { border-top: 1.5px dashed var(--an-ink-2); }
+.an-t-legend .bd { display: inline-block; width: 18px; height: 10px; background: var(--an-other); opacity: .55; vertical-align: middle; margin-right: 6px; }
 
 /* граф связей */
 .an-graph { overflow-x: auto; }

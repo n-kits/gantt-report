@@ -82,7 +82,8 @@
     const longest = Math.max(...items.map(it => textW(el, it.label)));
     const labelW = Math.min(Math.max(opts.labelW || 190, longest + 14), W * 0.46);
     const H = items.length * rowH + 4;
-    const max = Math.max(1, ...items.map(it => it.value));
+    // it.ref — черта «обычно» поверх столбика (режим «Сегодня»): шкала учитывает и её
+    const max = Math.max(1, ...items.map(it => Math.max(it.value, it.ref || 0)));
     const x = v => (W - labelW - valW) * v / max;
     let s = `<line class="baseline" x1="${labelW}" x2="${labelW}" y1="0" y2="${H}"/>`;
     items.forEach((it, i) => {
@@ -91,7 +92,8 @@
       const label = fitText(el, it.label, labelW - 12);
       s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
         `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>` +
-        `<text class="val" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
+        (it.ref != null ? `<line class="ref" x1="${labelW + x(it.ref)}" x2="${labelW + x(it.ref)}" y1="${yy - 3}" y2="${yy + bh + 3}"/>` : '') +
+        `<text class="val" x="${labelW + Math.max(w, it.ref != null ? x(it.ref) + 2 : 0) + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
         `<rect class="hit${opts.onClick ? ' click' : ''}" data-i="${i}" x="0" y="${yy - 5}" width="${W}" height="${rowH}"/>`;
     });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title || '')}">${s}</svg>`;
@@ -461,6 +463,108 @@ ${fmtSigned(d.h)}` }),
     ctx.$('regions-t').innerHTML = table(['Регион', 'Заказов'], [...regionMap.entries()].sort((a, b) => b[1] - a[1]));
   }
 
+  // === Сегодня ==============================================================
+  // ctx.T — A.today(): день против того же дня недели прошлых недель, к тому же часу
+  const fmtRef = x => x == null ? '—' : fmt1(x);
+  const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const hourLabel = k => String((A.DAY_START + Math.floor(k)) % 24).padStart(2, '0') + ':00';
+
+  // «▲ 30% к медиане 12» / «как обычно»; обычно = медиана, разброс — средняя половина дней
+  // разброс — целыми (заказы штучные); на малых числах — разница в штуках, проценты от 1–4 только шумят
+  function vsTypical(v, x, word) {
+    if (!x.n) return 'истории для сравнения пока нет';
+    const lo = Math.round(x.lo), hi = Math.round(x.hi);
+    const range = lo !== hi ? ` (обычно ${fmtN(lo)}–${fmtN(hi)})` : '';
+    const diff = v - x.med;
+    let head;
+    if (Math.abs(diff) < 0.5 || (x.med >= 5 && Math.abs(diff / x.med) < 0.05)) head = '<b>как обычно</b>';
+    else if (x.med < 5) head = `<b>${diff > 0 ? '▲' : '▼'} на ${fmtRef(Math.abs(diff))}</b> ${diff > 0 ? 'больше' : 'меньше'} медианы ${fmtRef(x.med)}`;
+    else head = `<b>${diff > 0 ? '▲' : '▼'} ${Math.abs(Math.round(diff / x.med * 100))}%</b> к медиане ${fmtRef(x.med)}`;
+    return `${head} ${word}${range}`;
+  }
+
+  function todayKpis(ctx) {
+    const T = ctx.T, word = `по ${T.refWord}`;
+    const left = T.fullDay.med != null && T.arrived.med != null ? Math.max(0, Math.round(T.fullDay.med - T.arrived.med)) : null;
+    ctx.$('t-kpis').innerHTML = [
+      `<div class="kpi hero"><div class="label">Заказов к ${hhmm(T.now)}</div><div class="value">${fmtN(T.arrived.today)}</div>` +
+        `<div class="delta">${vsTypical(T.arrived.today, T.arrived, word)}</div></div>`,
+      `<div class="kpi"><div class="label">Обычно за весь день</div><div class="value">${fmtRef(T.fullDay.med)}</div>` +
+        `<div class="delta">${left != null ? `после этого часа обычно приходит ещё ~${fmtN(left)}` : 'нет истории'}</div></div>`,
+      `<div class="kpi"><div class="label">В работе сейчас</div><div class="value">${fmtN(T.open.today)}</div>` +
+        `<div class="delta">${vsTypical(T.open.today, T.open, word)}</div></div>`,
+      `<div class="kpi"><div class="label">Просрочено сейчас</div><div class="value">${fmtN(T.late.today)}</div>` +
+        `<div class="delta">${vsTypical(T.late.today, T.late, word)}</div></div>`,
+    ].join('');
+  }
+
+  // часы суток с 04:00: полоса — средняя половина обычных дней, пунктир — медиана, линия — сегодня до «сейчас»
+  function dayCurve(el, pts, opts) {
+    const W = widthOf(el), H = 220, L = 34, R = 10, T = 10, B = 26;
+    const tk = ticks(Math.max(1, ...pts.map(p => Math.max(p.today || 0, p.hi || 0)))), max = tk.top;
+    const x = k => L + (W - L - R) * k / 24, y = v => T + (H - T - B) * (1 - v / max);
+    let s = yAxis(tk, y, L, W, R);
+    for (let k = 0; k <= 24; k += 4) s += `<text x="${x(k)}" y="${H - 8}" text-anchor="middle">${hourLabel(k).slice(0, 2)}</text>`;
+    const ref = pts.filter(p => p.med != null);
+    if (ref.length) {
+      s += `<path class="band" d="M${ref.map(p => `${x(p.k)},${y(p.hi)}`).join('L')}L${ref.slice().reverse().map(p => `${x(p.k)},${y(p.lo)}`).join('L')}Z"/>`;
+      s += `<path class="median" d="M${ref.map(p => `${x(p.k)},${y(p.med)}`).join('L')}"/>`;
+    }
+    const tod = pts.filter(p => p.today != null);
+    if (tod.length) {
+      s += `<path class="today" d="M${tod.map(p => `${x(p.k)},${y(p.today)}`).join('L')}"/>`;
+      const last = tod[tod.length - 1];
+      s += `<line class="now" x1="${x(last.k)}" x2="${x(last.k)}" y1="${T}" y2="${H - B}"/>` +
+        `<circle class="today-dot" cx="${x(last.k)}" cy="${y(last.today)}" r="3.5"/>`;
+    }
+    // зоны подсказки — по целым часам
+    const hours = pts.filter(p => Number.isInteger(p.k)), cw = (W - L - R) / 24;
+    hours.forEach((p, i) => { s += `<rect class="hit" data-i="${i}" x="${x(p.k) - cw / 2}" y="${T}" width="${cw}" height="${H - T - B}"/>`; });
+    el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title)}">${s}</svg>`;
+    bindHits(el, hours, p => `<div class="t">${opts.at(p.k)}</div>` +
+      (p.today != null ? row('var(--an-accent)', 'Сегодня', fmtN(p.today)) : '') +
+      (p.med != null ? row('', `Медиана по ${opts.refWord}`, fmtRef(p.med)) + row('', 'Обычно', `${fmtRef(p.lo)}–${fmtRef(p.hi)}`) : ''));
+  }
+
+  function todayView(ctx) {
+    const T = ctx.T;
+    ctx.$('t-cap').textContent = `${dmy(T.day)}, к ${hhmm(T.now)} · сравнение с тем же часом по ${T.refWord}: ` +
+      (T.refs.length ? `${fmtN(T.refs.length)} ${plural(T.refs.length, ['неделя', 'недели', 'недель'])} (${T.refs.map(dm).join(', ')})` : 'истории пока нет');
+    todayKpis(ctx);
+    document.querySelectorAll('.an-t-legend').forEach(el => {
+      el.innerHTML = `<span><span class="ln"></span>сегодня</span><span><span class="ln med"></span>медиана по ${T.refWord}</span>` +
+        `<span><span class="bd"></span>обычный разброс (средняя половина дней)</span>`;
+    });
+    const curveTable = pts => table(['Час', 'Сегодня', 'Медиана', 'Обычно от', 'до'],
+      pts.filter(p => Number.isInteger(p.k)).map(p => [hourLabel(p.k), p.today == null ? '' : p.today, fmtRef(p.med), fmtRef(p.lo), fmtRef(p.hi)]));
+    dayCurve(ctx.$('t-arrived'), T.curves.arrived, { title: 'Поступление заказов', refWord: T.refWord, at: k => `пришло к ${hourLabel(k)}` });
+    ctx.$('t-arrived-t').innerHTML = curveTable(T.curves.arrived);
+    dayCurve(ctx.$('t-open'), T.curves.open, { title: 'Одновременно в работе', refWord: T.refWord, at: k => `в работе в ${hourLabel(k)}` });
+    ctx.$('t-open-t').innerHTML = curveTable(T.curves.open);
+
+    const tipRef = it => `<div class="t">${esc(it.label)}</div>${row('var(--an-accent)', 'Сегодня', fmtN(it.value))}${row('', `Медиана по ${T.refWord}`, fmtRef(it.ref))}`;
+    const prod = T.products.map(p => { const P = PRODUCTS.find(x => x.key === p.key); return Object.assign({}, p, { label: P.label, color: P.color }); });
+    if (prod.length) hbars(ctx.$('t-products'), prod, { title: 'Виды продукции', labelW: 150, tip: tipRef });
+    else ctx.$('t-products').innerHTML = '<div class="an-empty">Заказов к этому часу нет ни сегодня, ни обычно</div>';
+    const proj = T.projects.slice(0, 10).map(p => Object.assign({}, p, { label: p.key, color: 'var(--an-s1)' }));
+    if (proj.length) hbars(ctx.$('t-projects'), proj, { title: 'Проекты', labelW: 150, tip: tipRef });
+    else ctx.$('t-projects').innerHTML = '<div class="an-empty">Заказов к этому часу нет ни сегодня, ни обычно</div>';
+    const refTable = list => table(['', 'Сегодня', 'Медиана'], list.map(p => [p.label || p.key, p.value, fmtRef(p.ref)]));
+    ctx.$('t-products-t').innerHTML = refTable(prod);
+    ctx.$('t-projects-t').innerHTML = refTable(T.projects);
+
+    const n = T.arrived.today;
+    ctx.$('t-places-cap').textContent = n ? `Анализ LLM есть у ${fmtN(T.analyzed)} из ${fmtN(n)} заказов дня.` : '';
+    const pl = T.places.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-accent)' : 'var(--an-s1)' }));
+    if (!pl.length) ctx.$('t-places').innerHTML = `<div class="an-empty">${n ? 'Мест в заказах дня пока нет' : 'Заказов сегодня пока нет'}</div>`;
+    else hbars(ctx.$('t-places'), pl, { title: 'Места сегодня', labelW: 190,
+      tip: it => `<div class="t">${esc(it.label)}</div>${it.area ? `<div class="g">${esc(it.area)}</div>` : ''}` +
+        row('var(--an-accent)', 'Заказов сегодня', fmtN(it.value)) +
+        row('', `В среднем в день за ${T.placeDays} дн.`, it.isNew ? 'не было' : fmt1(it.ref)) });
+    ctx.$('t-places-t').innerHTML = table(['Место', 'Регион', 'Сегодня', 'В среднем в день'],
+      T.places.map(p => [p.label, p.area || '', p.value, p.isNew ? 'новое' : fmt1(p.ref)]));
+  }
+
   A.ui = { showTip, hideTip, row, table };
-  A.dashboard = { kpis, days, projects, heat, lead, sla, margin, execs, geo };
+  A.dashboard = { kpis, days, projects, heat, lead, sla, margin, execs, geo, todayView };
 })(typeof window !== 'undefined' ? window : globalThis);
