@@ -5,6 +5,8 @@
  *           { name, kind: 'country'|'water'|'settlement'|…, iso?, lat?, lon?, approx? } ] }] }
  *
  * «Сегодня» — с 04:00 (как ось ленты): до 04:00 утра сегодняшним считается вчерашний день.
+ * Исключение — ночной заказ: зарегистрирован в 00:00–04:00, а срок после 04:00 — это работа новых суток,
+ * он «сегодняшний» с 04:00 (item.deadline — из строки ленты, live.js).
  */
 (function (root) {
   'use strict';
@@ -23,6 +25,13 @@
     return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)) : null;
   }
 
+  // к каким суткам относится заказ: по регистрации, а ночной (00–04) со сроком после 04:00 — к новым суткам
+  function effectiveStart(start, deadline) {
+    if (!start || start.getHours() >= DAY_START_HOUR) return start;
+    const next = new Date(start.getFullYear(), start.getMonth(), start.getDate(), DAY_START_HOUR);
+    return deadline && deadline >= next ? next : start;
+  }
+
   const normName = s => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 
   /*
@@ -38,7 +47,7 @@
     const points = new Map();
     const countries = new Map();
     for (const it of (geo && geo.items) || []) {
-      const start = parseStart(it.start);
+      const start = effectiveStart(parseStart(it.start), parseStart(it.deadline));
       const today = !!start && start >= from;
       // 0 — сегодня, 1 — вчера, 2 — позавчера (и всё, что раньше)
       const day = today ? 0 : start ? Math.min(2, 1 + Math.floor((from - start) / 86400000)) : 2;
@@ -82,5 +91,5 @@
     return Math.max(0.5, Math.min(max, min + k * (n - 1)));
   };
 
-  root.GanttGeo = { aggregate, dayStart, parseStart, radius, DAY_START_HOUR };
+  root.GanttGeo = { aggregate, dayStart, parseStart, effectiveStart, radius, DAY_START_HOUR };
 })(typeof window !== 'undefined' ? window : globalThis);

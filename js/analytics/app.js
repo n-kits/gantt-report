@@ -129,8 +129,10 @@
     $('from').value = st.from; $('to').value = st.to; msRender('project'); msRender('product');
     // стрелки сдвига периода: на его длину (Shift — на день); у края архива — неактивны
     const n = span(st.from, st.to), word = `${n} ${A.util.plural(n, ['день', 'дня', 'дней'])}`;
-    $('prev').disabled = st.from <= M.firstDay; $('next').disabled = st.to >= M.lastDay;
-    $('prev').title = `На ${word} раньше (Shift — на день)`; $('next').title = `На ${word} позже (Shift — на день)`;
+    if ($('prev') && $('next')) {
+      $('prev').disabled = st.from <= M.firstDay; $('next').disabled = st.to >= M.lastDay;
+      $('prev').title = `На ${word} раньше (Shift — на день)`; $('next').title = `На ${word} позже (Shift — на день)`;
+    }
     const days = span(st.from, st.to);
     document.querySelectorAll('#an-presets button').forEach(b => {
       if (b.dataset.days === 'today') { b.setAttribute('aria-pressed', String(st.mode === 'today')); return; }
@@ -156,8 +158,9 @@
       if (from < M.firstDay) from = M.firstDay;
       update({ from, to });
     };
-    $('prev').addEventListener('click', shiftPeriod(-1));
-    $('next').addEventListener('click', shiftPeriod(1));
+    // ?. — после выкладки браузер может какое-то время держать старый index.html без стрелок: вкладка не должна падать
+    $('prev')?.addEventListener('click', shiftPeriod(-1));
+    $('next')?.addEventListener('click', shiftPeriod(1));
     $('from').addEventListener('change', e => { if (e.target.value) update({ from: e.target.value }); });
     $('to').addEventListener('change', e => { if (e.target.value) update({ to: e.target.value }); });
     msMount('project'); msMount('product');

@@ -136,6 +136,11 @@
     App.loadRows(payload.rows, payload.sourceName || envelope.source, now, 'live', from);
     // анализ через LLM выключен в сборщике — карту и таблицу не показываем, пока его не включат
     const geo = payload.geo && payload.geo.llm !== false ? payload.geo : null;
+    // срок задачи — из строки ленты: ночной заказ (00–04) со сроком после 04:00 карта считает сегодняшним
+    if (geo) {
+      const deadline = new Map(payload.rows.map(r => [M.extractId(r[0]), r[5]]));
+      geo.items = (geo.items || []).map(it => it.deadline || !deadline.get(it.id) ? it : Object.assign({}, it, { deadline: deadline.get(it.id) }));
+    }
     if (root.GanttMap) root.GanttMap.show(geo, now);
     if (root.GanttGeoTable && geo) {
       root.GanttGeoTable.mount(document.getElementById('geo-table'), root.GanttGeoTable.fromLive(geo, payload.rows));

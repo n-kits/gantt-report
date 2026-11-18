@@ -156,6 +156,22 @@
       'слияние по pid; город и река — разные места');
   });
 
+  await test('карта: ночной заказ (00–04) со сроком после 04:00 — сегодняшний', () => {
+    const sochi = { name: 'Сочи', kind: 'settlement', lat: 43.58, lon: 39.72 };
+    const kzn = { name: 'Казань', kind: 'settlement', lat: 55.79, lon: 49.1 };
+    const a = G.aggregate({ items: [
+      { id: '1', start: '28.09.2026 03:49:00', deadline: '28.09.2026 09:00:00', toponyms: [sochi] },   // случай 1215688
+      { id: '2', start: '28.09.2026 00:12:00', deadline: '28.09.2026 00:30:00', toponyms: [kzn] },      // срок ещё ночью
+    ] }, at(28, 10));
+    const byName = Object.fromEntries(a.points.map(p => [p.name, p]));
+    eq([byName['Сочи'].today, byName['Сочи'].byDay], [true, [1, 0, 0]], 'срок после 04:00 — работа новых суток');
+    eq([byName['Казань'].today, byName['Казань'].byDay], [false, [0, 1, 0]], 'срок до 04:00 — ещё вчерашние сутки');
+    // до 04:00 «сегодня» ещё не наступило: ночной заказ — среди вчерашних суток окна, как и раньше
+    eq(G.aggregate({ items: [{ id: '1', start: '28.09.2026 03:49:00', deadline: '28.09.2026 09:00:00', toponyms: [sochi] }] }, at(28, 3, 55)).points[0].today, true,
+      'в 03:55 сутки ещё 27.09 — заказ пока среди «сегодняшних» по регистрации');
+    eq(G.effectiveStart(new Date(2026, 8, 28, 15), new Date(2026, 8, 29, 9)).getHours(), 15, 'дневной заказ — по регистрации');
+  });
+
   const out = document.getElementById('out');
   const ok = results.filter(r => r.ok).length;
   out.innerHTML = `<h2 class="${ok === results.length ? 'pass' : 'fail'}">${ok} / ${results.length} пройдено</h2>` +
