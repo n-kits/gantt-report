@@ -18,7 +18,7 @@
   const SLOTS = ['var(--an-s1)', 'var(--an-s2)', 'var(--an-s3)', 'var(--an-s4)', 'var(--an-s5)'];
   const ROLE_COLOR = { 'Картограф': 'var(--an-s1)', 'Дизайнер': 'var(--an-s2)' };
   const roleColor = r => ROLE_COLOR[r] || 'var(--an-other)';
-  const DEFAULTS = { mode: '', gran: 'auto', days: 14, project: '', product: '', person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
+  const DEFAULTS = { mode: '', gran: 'auto', days: 14, project: null, product: null, person: '', place: '', beta: 0.85, betaPlaces: 0.85, minw: { people: 2, places: 1 }, winEnd: null, marginView: 'bars', marginRows: 'project', sankeyMode: 'full' };
 
   const $ = id => document.getElementById('an-' + id);
 
@@ -40,6 +40,8 @@
     try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
     s = Object.assign({}, DEFAULTS, s || {});
     s.minw = Object.assign({}, DEFAULTS.minw, s.minw || {});
+    s.project = A.asFilter(s.project);
+    s.product = A.asFilter(s.product);
     return s;
   }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* не критично */ } };
@@ -61,17 +63,70 @@
   }
 
   // --- фильтры --------------------------------------------------------------
-  function fillSelects() {
-    const counts = A.util.countBy(M.tasks, t => t.project);
-    $('project').innerHTML = '<option value="">Все</option>' +
-      [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([p, n]) => `<option value="${esc(p)}">${esc(p)} · ${n}</option>`).join('');
-    $('product').innerHTML = '<option value="">Все</option>' + A.PRODUCTS.map(p => `<option value="${p.key}">${p.label}</option>`).join('');
+  // выпадающий мультивыбор: «Только выбранные» / «Все, кроме», галочки с числом заказов, поиск на длинном списке
+  const productName = k => (A.PRODUCTS.find(p => p.key === k) || { label: k }).label;
+  // число заказов в списке — за выбранный период (без учёта самих фильтров), проекты без заказов в периоде — в конце
+  const inPeriod = () => M.tasks.filter(t => A.inRange(t, st.from, st.to));
+  const MS = {
+    project: { title: 'Проект', name: k => k, options: () => { const c = A.util.countBy(inPeriod(), t => t.project), all = A.util.countBy(M.tasks, t => t.project);
+      return [...all.keys()].map(k => ({ key: k, label: k, n: c.get(k) || 0, all: all.get(k) })).sort((a, b) => b.n - a.n || b.all - a.all); } },
+    product: { title: 'Вид продукции', name: productName, options: () => { const c = A.util.countBy(inPeriod(), t => t.pkey); return A.PRODUCTS.map(p => ({ key: p.key, label: p.label, n: c.get(p.key) || 0 })); } },
+  };
+  let msOpen = null;
+  function msClose() { if (!msOpen) return; $(msOpen).querySelector('.an-ms-pop').hidden = true; $(msOpen).querySelector('.an-ms-btn').setAttribute('aria-expanded', 'false'); msOpen = null; }
+  function msRender(k) {
+    const el = $(k), cfg = MS[k], f = st[k];
+    const lbl = A.filterLabel(f, cfg.name);
+    el.querySelector('.an-ms-btn').innerHTML = `<span class="an-ms-v">${esc(lbl || 'Все')}</span>` +
+      `<svg class="an-ms-caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    el.querySelector('.an-ms-btn').title = A.isOn(f) ? (f.mode === 'out' ? 'Все, кроме: ' : 'Только: ') + f.items.map(cfg.name).join(', ') : 'Все';
+    const pop = el.querySelector('.an-ms-pop');
+    if (pop.hidden) return;
+    const q = (pop.querySelector('.an-ms-q') || {}).value || '';
+    pop.querySelectorAll('.an-ms-mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === f.mode)));
+    const opts = cfg.options().filter(o => !q || o.label.toLowerCase().includes(q.toLowerCase()));
+    pop.querySelector('.an-ms-list').innerHTML = opts.map(o =>
+      `<label><input type="checkbox" value="${esc(o.key)}"${f.items.includes(o.key) ? ' checked' : ''}><span>${esc(o.label)}</span><small>${A.util.fmtN(o.n)}</small></label>`).join('') ||
+      '<div class="an-ms-none">Ничего не найдено</div>';
   }
+  function msMount(k) {
+    const el = $(k), cfg = MS[k];
+    el.innerHTML = `<button type="button" class="an-ms-btn" aria-haspopup="true" aria-expanded="false"></button>` +
+      `<div class="an-ms-pop" hidden>` +
+      `<div class="an-seg an-ms-mode" role="group" aria-label="Как выбирать"><button type="button" data-m="in">Только выбранные</button><button type="button" data-m="out">Все, кроме</button></div>` +
+      (k === 'project' ? '<input class="an-ms-q" type="search" placeholder="Найти проект">' : '') +
+      `<div class="an-ms-list"></div><div class="an-ms-foot"><button type="button" class="an-link an-ms-clear">Сбросить</button><button type="button" class="an-link an-ms-done">Готово</button></div></div>`;
+    const pop = el.querySelector('.an-ms-pop');
+    // подпись «Проект» / «Вид продукции» тоже открывает список — как у прежнего <label><select>
+    // (сам щелчок по подписи дальше не идёт — иначе общий обработчик «щелчок мимо» тут же закрыл бы список)
+    el.parentElement.addEventListener('click', e => { if (e.target === el.parentElement) { e.stopPropagation(); el.querySelector('.an-ms-btn').click(); } });
+    el.querySelector('.an-ms-btn').addEventListener('click', () => {
+      const was = msOpen === k;
+      msClose();
+      if (was) return;
+      msOpen = k; pop.hidden = false; el.querySelector('.an-ms-btn').setAttribute('aria-expanded', 'true');
+      // у правого края экрана (телефон) — сдвинуть список влево, чтобы не вылезал за экран
+      pop.style.left = '';
+      const over = pop.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
+      if (over > 0) pop.style.left = `${-over}px`;
+      msRender(k);
+      const q = pop.querySelector('.an-ms-q'); if (q) { q.value = ''; msRender(k); }
+    });
+    pop.querySelectorAll('.an-ms-mode button').forEach(b => b.addEventListener('click', () => update({ [k]: { mode: b.dataset.m, items: st[k].items.slice() } })));
+    pop.querySelector('.an-ms-list').addEventListener('change', e => {
+      const v = e.target.value, items = e.target.checked ? [...st[k].items, v] : st[k].items.filter(x => x !== v);
+      update({ [k]: { mode: st[k].mode, items } });
+    });
+    const q = pop.querySelector('.an-ms-q'); if (q) q.addEventListener('input', () => msRender(k));
+    pop.querySelector('.an-ms-clear').addEventListener('click', () => update({ [k]: A.noFilter() }));
+    pop.querySelector('.an-ms-done').addEventListener('click', msClose);
+  }
+  function fillSelects() { msRender('project'); msRender('product'); }
 
   function sync() {
     clamp();
     $('from').min = $('to').min = M.firstDay; $('from').max = $('to').max = M.lastDay;
-    $('from').value = st.from; $('to').value = st.to; $('project').value = st.project; $('product').value = st.product;
+    $('from').value = st.from; $('to').value = st.to; msRender('project'); msRender('product');
     const days = span(st.from, st.to);
     document.querySelectorAll('#an-presets button').forEach(b => {
       if (b.dataset.days === 'today') { b.setAttribute('aria-pressed', String(st.mode === 'today')); return; }
@@ -90,11 +145,15 @@
     }));
     $('from').addEventListener('change', e => { if (e.target.value) update({ from: e.target.value }); });
     $('to').addEventListener('change', e => { if (e.target.value) update({ to: e.target.value }); });
-    $('project').addEventListener('change', e => update({ project: e.target.value }));
-    $('product').addEventListener('change', e => update({ product: e.target.value }));
+    msMount('project'); msMount('product');
+    // закрыть список: щелчок мимо, Esc
+    // путь события — на момент щелчка: кнопка при открытии перерисовывает свою надпись, и e.target к этому
+    // времени уже вне документа — по contains() щелчок по надписи выглядел бы «мимо» и сразу закрывал список
+    document.addEventListener('click', e => { if (msOpen && !e.composedPath().includes($(msOpen))) msClose(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') msClose(); });
     $('reset').addEventListener('click', () => {
       const keep = { beta: st.beta, betaPlaces: st.betaPlaces, minw: st.minw, gran: st.gran };
-      st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null, mode: '' });
+      st = Object.assign({}, DEFAULTS, keep, { follow: true, len: DEFAULTS.days, from: null, to: null, mode: '', project: A.noFilter(), product: A.noFilter() });
       sync(); render();
     });
     // разделы — прокруткой, без смены адреса (адрес занят вкладкой)
@@ -131,8 +190,8 @@
   function status(day) {
     const s = A.statusAt(M, day || st.from, day || st.to);
     const parts = [day ? `Сегодня, ${dmy(day)}` : `${dmy(st.from)} — ${dmy(st.to)}`];
-    if (st.project) parts.push(st.project);
-    if (st.product) parts.push(A.PRODUCTS.find(p => p.key === st.product).label);
+    if (A.isOn(st.project)) parts.push((st.project.mode === 'out' ? 'проекты кроме: ' : '') + st.project.items.join(', '));
+    if (A.isOn(st.product)) parts.push((st.product.mode === 'out' ? 'виды кроме: ' : '') + st.product.items.map(productName).join(', '));
     $('period').textContent = parts.join(' · ');
     // свежесть: последние 3 дня сверяются каждые 15 минут, более ранние (до 14 дней) — ночью
     $('status').innerHTML = s

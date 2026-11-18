@@ -28,7 +28,7 @@
       const it = items[+n.dataset.i];
       n.addEventListener('mousemove', e => showTip(e, html(it)));
       n.addEventListener('mouseleave', hideTip);
-      if (onClick) n.addEventListener('click', () => { hideTip(); onClick(it); });
+      if (onClick) n.addEventListener('click', e => { hideTip(); onClick(it, e); });
     });
   }
   const table = (head, rows) => `<table><thead><tr>${head.map((h, i) => `<th class="${i ? 'n' : ''}">${esc(h)}</th>`).join('')}</tr></thead>` +
@@ -88,7 +88,7 @@
     let s = `<line class="baseline" x1="${labelW}" x2="${labelW}" y1="0" y2="${H}"/>`;
     items.forEach((it, i) => {
       const yy = i * rowH + 4, w = Math.max(1, x(it.value));
-      const dim = opts.active && opts.active !== it.key ? ' class="dim"' : '';
+      const dim = (opts.isActive ? !opts.isActive(it) : opts.active && opts.active !== it.key) ? ' class="dim"' : '';
       const label = fitText(el, it.label, labelW - 12);
       s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
         `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>` +
@@ -149,7 +149,7 @@
     const auto = !whole || !st.gran || st.gran === 'auto';
     const gran = auto ? A.autoGran(st.from, st.to, W - L - R, MIN_BAND) : st.gran;
     const bs = A.buckets(st.from, st.to, gran);
-    const shown = PRODUCTS.filter(p => !st.product || p.key === st.product);
+    const shown = PRODUCTS.filter(p => A.passes(st.product, p.key));
     const by = bs.map(b => { const o = Object.assign({}, b, { total: 0 }); PRODUCTS.forEach(p => { o[p.key] = 0; }); return o; });
     const idx = {};
     by.forEach((o, i) => o.days.forEach(d => { idx[d] = i; }));
@@ -162,9 +162,9 @@
     });
 
     ctx.$('days-legend').innerHTML = PRODUCTS.map(p =>
-      `<button type="button" data-p="${p.key}" aria-pressed="${!st.product || st.product === p.key}"><span class="sw" style="background:${p.color}"></span>${p.label}</button>`).join('');
-    ctx.$('days-legend').querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
-      ctx.update({ product: st.product === b.dataset.p ? '' : b.dataset.p })));
+      `<button type="button" data-p="${p.key}" aria-pressed="${A.passes(st.product, p.key)}" title="Клик — только этот вид; Ctrl+клик — добавить или убрать"><span class="sw" style="background:${p.color}"></span>${p.label}</button>`).join('');
+    ctx.$('days-legend').querySelectorAll('button').forEach(b => b.addEventListener('click', e =>
+      ctx.update({ product: A.toggleItem(st.product, b.dataset.p, e.ctrlKey || e.metaKey) })));
     ctx.$('days-title').textContent = `Заказы ${GRAN_WORD[gran][1]}`;
     const gb = ctx.$('days-gran');
     gb.hidden = !whole;
@@ -223,11 +223,12 @@
   function projects(ctx) {
     const { M, st } = ctx;
     // проекты — без фильтра по проекту, чтобы видеть выбранный среди остальных
-    const list = M.tasks.filter(t => A.inRange(t, st.from, st.to) && (!st.product || t.pkey === st.product));
+    const list = M.tasks.filter(t => A.inRange(t, st.from, st.to) && A.passes(st.product, t.pkey));
     const items = topN(countBy(list, t => t.project), 9, 'Другие').map(it => Object.assign(it, { color: it.other ? 'var(--an-other)' : 'var(--an-s1)' }));
     hbars(ctx.$('projects'), items, {
-      title: 'Проекты', active: st.project, labelW: 170,
-      onClick: it => { if (!it.other) ctx.update({ project: st.project === it.key ? '' : it.key }); },
+      title: 'Проекты', labelW: 170,
+      isActive: it => !A.isOn(st.project) || (!it.other && A.passes(st.project, it.key)),
+      onClick: (it, e) => { if (!it.other) ctx.update({ project: A.toggleItem(st.project, it.key, e && (e.ctrlKey || e.metaKey)) }); },
     });
     ctx.$('projects-t').innerHTML = table(['Проект', 'Заказов'], [...countBy(list, t => t.project).entries()].sort((a, b) => b[1] - a[1]));
   }

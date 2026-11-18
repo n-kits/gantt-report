@@ -115,6 +115,26 @@
         A.autoGran('2026-09-01', '2027-08-31', 300, 16)], ['day', 'week', 'month']);
   });
 
+  test('фильтры «Проект» / «Вид продукции»: несколько, «все, кроме», клик по графику, старое значение', () => {
+    const M = A.prepare(PAYLOAD);
+    const ids = st => M.tasks.filter(A.byDims(st)).map(t => t.id);
+    eq(ids({ project: A.noFilter(), product: A.noFilter() }), ['1', '2', '3'], 'пустой — все');
+    eq(ids({ project: { mode: 'in', items: ['Вести (Р24)'] }, product: A.noFilter() }), ['2', '3']);
+    eq(ids({ project: { mode: 'in', items: ['Вести (Р24)', 'Погода (Р24)'] }, product: A.noFilter() }), ['1', '2', '3'], 'несколько');
+    eq(ids({ project: { mode: 'out', items: ['Вести (Р24)'] }, product: A.noFilter() }), ['1'], 'все, кроме');
+    eq(ids({ project: { mode: 'out', items: ['Вести (Р24)'] }, product: { mode: 'out', items: ['plasma'] } }), [], 'оба фильтра вместе');
+    eq(ids({ project: A.noFilter(), product: { mode: 'in', items: ['clip', 'map'] } }), ['2', '3']);
+    // клик: «только этот», повторный — снять; Ctrl — добавить/убрать, режим сохраняется
+    const one = A.toggleItem(A.noFilter(), 'a', false);
+    eq([one, A.toggleItem(one, 'a', false)], [{ mode: 'in', items: ['a'] }, { mode: 'in', items: [] }]);
+    eq(A.toggleItem({ mode: 'out', items: ['a'] }, 'b', true), { mode: 'out', items: ['a', 'b'] });
+    eq(A.toggleItem({ mode: 'out', items: ['a', 'b'] }, 'a', true), { mode: 'out', items: ['b'] });
+    eq([A.filterLabel(A.noFilter(), k => k), A.filterLabel({ mode: 'in', items: ['a', 'b', 'c'] }, k => k.toUpperCase()),
+        A.filterLabel({ mode: 'out', items: ['a'] }, k => k)], ['', 'A +2', 'кроме: a']);
+    eq([A.asFilter('Вести (Р24)'), A.asFilter(''), A.asFilter(null)],
+      [{ mode: 'in', items: ['Вести (Р24)'] }, { mode: 'in', items: [] }, { mode: 'in', items: [] }], 'сохранённое до 11.2026 — строка');
+  });
+
   // свой блок: тесты Bitrix асинхронные и перезаписывают #out
   const out = document.body.appendChild(document.createElement('div'));
   const ok = results.filter(r => r.ok).length;

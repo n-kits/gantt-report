@@ -78,6 +78,29 @@
 .an-seg button[aria-pressed="true"] { background: var(--an-ink); color: var(--an-surface); font-weight: 700; }
 .an-link { font: inherit; font-size: 13px; background: none; border: 0; color: var(--an-accent); cursor: pointer; padding: 0; }
 .an-link:hover { text-decoration: underline; }
+/* мультивыбор «Проект» / «Вид продукции» */
+.an-ms-l { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--an-ink-2); cursor: pointer; }   /* как .an-bar label */
+.an-ms { position: relative; display: inline-block; }
+/* как прежние <select> панели: шрифт, рамка, скругление, высота, фон; стрелка — та же «галочка» вниз */
+.an-ms-btn { font: inherit; font-size: 13px; color: var(--an-ink); background: var(--an-surface);
+  border: 1px solid var(--an-axis); border-radius: 6px; padding: 3px 6px; height: 28px;
+  min-width: 170px; max-width: 220px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-align: left; }
+.an-ms-btn:focus-visible { outline: 2px solid var(--an-ink); outline-offset: -1px; }
+.an-ms-v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-ms-caret { width: 10px; height: 6px; flex: none; margin: 0 2px; }
+.an-ms-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; width: 300px; max-width: calc(100vw - 32px);
+  background: var(--an-surface); border: 1px solid var(--an-axis); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .12);
+  padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.an-ms-pop[hidden] { display: none; }
+.an-ms-mode { align-self: flex-start; }
+.an-ms-q { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--an-axis); border-radius: 4px; }
+.an-ms-list { max-height: 280px; overflow: auto; display: flex; flex-direction: column; }
+.an-ms-list label { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.an-ms-list label:hover { background: var(--an-hover); }
+.an-ms-list label span { flex: 1; }
+.an-ms-list small { color: var(--an-muted); }
+.an-ms-none { color: var(--an-muted); font-size: 13px; padding: 4px; }
+.an-ms-foot { display: flex; justify-content: space-between; border-top: 1px solid var(--an-grid); padding-top: 6px; }
 .an-nav { margin-left: auto; display: flex; gap: 2px; }
 .an-nav button { font: inherit; font-size: 13px; font-weight: 700; color: var(--an-ink-2); background: none; border: 0;
                  padding: 4px 8px; border-radius: 4px; cursor: pointer; }

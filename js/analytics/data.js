@@ -68,7 +68,27 @@
 
   // --- фильтры --------------------------------------------------------------
   const inRange = (t, a, b) => t.day >= a && t.day <= b;
-  const byDims = st => t => (!st.project || t.project === st.project) && (!st.product || t.pkey === st.product);
+  // фильтр проекта / вида продукции: { mode: 'in' — только выбранные | 'out' — все, кроме, items: [...] }; пустой — все
+  const noFilter = () => ({ mode: 'in', items: [] });
+  const isOn = f => !!(f && f.items && f.items.length);
+  const passes = (f, v) => !isOn(f) || (f.mode === 'out' ? !f.items.includes(v) : f.items.includes(v));
+  // клик по графику: «только этот» (повторный — снять); с Ctrl — добавить к выбору / убрать из него
+  function toggleItem(f, key, add) {
+    f = isOn(f) ? f : noFilter();
+    if (!add) return f.mode === 'in' && f.items.length === 1 && f.items[0] === key ? noFilter() : { mode: 'in', items: [key] };
+    const items = f.items.includes(key) ? f.items.filter(k => k !== key) : [...f.items, key];
+    return { mode: f.mode, items };
+  }
+  // подпись: «Погода (Р24)», «Погода (Р24) +2», «кроме: Погода (Р24)»; '' — фильтра нет
+  function filterLabel(f, name) {
+    if (!isOn(f)) return '';
+    const s = name(f.items[0]) + (f.items.length > 1 ? ` +${f.items.length - 1}` : '');
+    return f.mode === 'out' ? `кроме: ${s}` : s;
+  }
+  // сохранённое до 11.2026 значение — строка с одним проектом / видом
+  const asFilter = v => typeof v === 'string' ? (v ? { mode: 'in', items: [v] } : noFilter())
+    : v && Array.isArray(v.items) ? { mode: v.mode === 'out' ? 'out' : 'in', items: v.items.slice() } : noFilter();
+  const byDims = st => t => passes(st.project, t.project) && passes(st.product, t.pkey);
 
   // окно графа топонимов: 7 дней, конец — в пределах общего периода (по умолчанию его последний день)
   const WIN = 7;
@@ -243,6 +263,7 @@
   root.GanttAnalytics = Object.assign(root.GanttAnalytics || {}, {
     HOUR, DAY, PRODUCTS, WIN,
     prepare, placeGroup, inRange, byDims, topWindow, statusAt, pairs, graphPeople, graphPlaces,
+    noFilter, isOn, passes, toggleItem, filterLabel, asFilter,
     today, openAt, workdayOf, DAY_START, REF_WEEKS,
     buckets, autoGran, bucketLabel, GRANS, MONTHS,
     util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, quantile },
