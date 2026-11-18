@@ -153,6 +153,7 @@
             border-radius: 6px; background: var(--an-surface); color: var(--an-ink); cursor: pointer; }
 .an-arrow:hover { background: var(--an-hover); }
 .an-arrow:disabled { opacity: .35; cursor: default; }
+.an-range { display: inline-flex; align-items: center; gap: 6px; }
 .an-pin { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 12px;
           background: rgba(196, 92, 38, .12); color: var(--an-ink); font-size: 12.5px; }
 .an-pin[hidden], .an-seg[hidden], .an-legend[hidden] { display: none; }

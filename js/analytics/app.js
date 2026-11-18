@@ -127,6 +127,10 @@
     clamp();
     $('from').min = $('to').min = M.firstDay; $('from').max = $('to').max = M.lastDay;
     $('from').value = st.from; $('to').value = st.to; msRender('project'); msRender('product');
+    // стрелки сдвига периода: на его длину (Shift — на день); у края архива — неактивны
+    const n = span(st.from, st.to), word = `${n} ${A.util.plural(n, ['день', 'дня', 'дней'])}`;
+    $('prev').disabled = st.from <= M.firstDay; $('next').disabled = st.to >= M.lastDay;
+    $('prev').title = `На ${word} раньше (Shift — на день)`; $('next').title = `На ${word} позже (Shift — на день)`;
     const days = span(st.from, st.to);
     document.querySelectorAll('#an-presets button').forEach(b => {
       if (b.dataset.days === 'today') { b.setAttribute('aria-pressed', String(st.mode === 'today')); return; }
@@ -143,6 +147,17 @@
       Object.assign(st, { mode: '', to: M.lastDay, from: d ? addDays(M.lastDay, 1 - d) : M.firstDay, follow: true, len: d || 'all', winEnd: null });
       sync(); render();
     }));
+    // сдвиг периода целиком: длина сохраняется, у края архива период упирается в край
+    const shiftPeriod = dir => e => {
+      const n = span(st.from, st.to), k = (e.shiftKey ? 1 : n) * dir;
+      let from = addDays(st.from, k), to = addDays(st.to, k);
+      if (from < M.firstDay) { from = M.firstDay; to = addDays(from, n - 1); }
+      if (to > M.lastDay) { to = M.lastDay; from = addDays(to, 1 - n); }
+      if (from < M.firstDay) from = M.firstDay;
+      update({ from, to });
+    };
+    $('prev').addEventListener('click', shiftPeriod(-1));
+    $('next').addEventListener('click', shiftPeriod(1));
     $('from').addEventListener('change', e => { if (e.target.value) update({ from: e.target.value }); });
     $('to').addEventListener('change', e => { if (e.target.value) update({ to: e.target.value }); });
     msMount('project'); msMount('product');

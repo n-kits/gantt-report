@@ -175,8 +175,12 @@
         <button type="button" data-days="30">30 дней</button>
         <button type="button" data-days="0">Весь архив</button>
       </div>
-      <label>с <input type="date" id="an-from"></label>
-      <label>по <input type="date" id="an-to"></label>
+      <span class="an-range">
+        <button id="an-prev" class="an-arrow" type="button">‹</button>
+        <label>с <input type="date" id="an-from"></label>
+        <label>по <input type="date" id="an-to"></label>
+        <button id="an-next" class="an-arrow" type="button">›</button>
+      </span>
       <span class="an-ms-l">Проект <span class="an-ms" id="an-project"></span></span>
       <span class="an-ms-l">Вид продукции <span class="an-ms" id="an-product"></span></span>
       <button class="an-link" id="an-reset" type="button">Сбросить</button>
