@@ -570,6 +570,16 @@ ${fmtSigned(d.h)}` }),
       (p.med != null ? row('', `Медиана по ${opts.refWord}`, fmtRef(p.med)) + row('', 'Обычно', `${fmtRef(p.lo)}–${fmtRef(p.hi)}`) : ''));
   }
 
+  // темы и места дня: столбик — сегодня, черта — в среднем в день за 4 недели, «новое» — зелёным
+  function vsPastBars(el, list, opts, T) {
+    const items = list.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-new)' : 'var(--an-s1)' }));
+    if (!items.length) { el.innerHTML = `<div class="an-empty">${opts.empty}</div>`; return; }
+    hbars(el, items, { title: opts.title, labelW: 190,
+      tip: it => `<div class="t">${esc(it.label)}</div>${it.area ? `<div class="g">${esc(it.area)}</div>` : ''}` +
+        row('', 'Заказов сегодня', fmtN(it.value)) +
+        row('', `В среднем в день за ${T.placeDays} дн.`, it.isNew ? 'не было' : fmt1(it.ref)) });
+  }
+
   function todayView(ctx) {
     const T = ctx.T;
     ctx.$('t-cap').textContent = `${dmy(T.day)}, к ${hhmm(T.now)} · сравнение с тем же часом по ${T.refWord}: ` +
@@ -598,15 +608,34 @@ ${fmtSigned(d.h)}` }),
     ctx.$('t-projects-t').innerHTML = refTable(T.projects);
 
     const n = T.arrived.today;
-    ctx.$('t-places-cap').textContent = n ? `Анализ LLM есть у ${fmtN(T.analyzed)} из ${fmtN(n)} заказов дня.` : '';
-    const pl = T.places.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-new)' : 'var(--an-s1)' }));
-    if (!pl.length) ctx.$('t-places').innerHTML = `<div class="an-empty">${n ? 'Мест в заказах дня пока нет' : 'Заказов сегодня пока нет'}</div>`;
-    else hbars(ctx.$('t-places'), pl, { title: 'Места сегодня', labelW: 190,
-      tip: it => `<div class="t">${esc(it.label)}</div>${it.area ? `<div class="g">${esc(it.area)}</div>` : ''}` +
-        row('', 'Заказов сегодня', fmtN(it.value)) +
-        row('', `В среднем в день за ${T.placeDays} дн.`, it.isNew ? 'не было' : fmt1(it.ref)) });
+    const anCap = n ? `Анализ LLM есть у ${fmtN(T.analyzed)} из ${fmtN(n)} заказов дня.` : '';
+    ctx.$('t-places-cap').textContent = anCap;
+    ctx.$('t-themes-cap').textContent = anCap;
+    vsPastBars(ctx.$('t-places'), T.places, { title: 'Места сегодня', empty: n ? 'Мест в заказах дня пока нет' : 'Заказов сегодня пока нет' }, T);
     ctx.$('t-places-t').innerHTML = table(['Место', 'Регион', 'Сегодня', 'В среднем в день'],
       T.places.map(p => [p.label, p.area || '', p.value, p.isNew ? 'новое' : fmt1(p.ref)]));
+    vsPastBars(ctx.$('t-themes'), T.themes, { title: 'Темы сегодня', empty: n ? 'Тем в заказах дня пока нет' : 'Заказов сегодня пока нет' }, T);
+    ctx.$('t-themes-t').innerHTML = table(['Тема', 'Сегодня', 'В среднем в день'],
+      T.themes.map(p => [p.label, p.value, p.isNew ? 'новое' : fmt1(p.ref)]));
+
+    // исполнители: нагрузка смены против обычного и кто сегодня сколько взял (без сравнения людей с их прошлым)
+    const C = T.crew, word = `по ${T.refWord}`;
+    ctx.$('t-crew').innerHTML =
+      `<div class="kpi"><div class="label">Людей в работе</div><div class="value">${fmtN(C.people.today)}</div><div class="delta">${vsTypical(C.people.today, C.people, word)}</div></div>` +
+      `<div class="kpi" title="Совместный заказ засчитывается каждому участнику целиком — как в списке ниже"><div class="label">Заказов на человека</div><div class="value">${C.perPerson.today == null ? '—' : fmt1(C.perPerson.today)}</div>` +
+        `<div class="delta">${C.perPerson.today == null ? '' : vsTypical(C.perPerson.today, C.perPerson, word)}</div></div>` +
+      `<div class="kpi" title="Заказы дня с 2 и больше исполнителями (передачи, совместная работа) среди взятых"><div class="label">Совместных</div><div class="value">${fmtPct(C.joint.today)}</div>` +
+        `<div class="delta">${C.joint.today == null || !C.joint.n ? '' : `обычно ${fmtPct(C.joint.med)} ${word}` + (Math.round(C.joint.lo * 100) !== Math.round(C.joint.hi * 100) ? ` (${fmtPct(C.joint.lo)}–${fmtPct(C.joint.hi)})` : '')}</div></div>` +
+      `<div class="kpi"><div class="label">Ещё не взяты</div><div class="value">${fmtN(C.notTaken)}</div><div class="delta">заказы дня без исполнителя</div></div>`;
+    const ws = T.workers.map(w => Object.assign({}, w, { color: ctx.roleColor(w.role) }));
+    if (!ws.length) ctx.$('t-workers').innerHTML = '<div class="an-empty">Сегодня заказы ещё никто не брал</div>';
+    else hbars(ctx.$('t-workers'), ws.slice(0, 15), { title: 'Исполнители сегодня', labelW: 150,
+      tip: it => `<div class="t">${esc(it.label)}</div><div class="g">${esc(it.role)}</div>` +
+        row('', 'Взял заказов сегодня', fmtN(it.value)) + row('', 'В работе сейчас (не сдано)', fmtN(it.busy)) });
+    ctx.$('t-workers-legend').innerHTML = [...new Set(ws.map(w => w.role))].sort()
+      .map(r => `<span><span class="sw round" style="background:${ctx.roleColor(r)}"></span>${esc(r)}</span>`).join('');
+    ctx.$('t-workers-t').innerHTML = table(['Исполнитель', 'Профиль', 'Взял сегодня', 'В работе сейчас'],
+      T.workers.map(w => [w.label, w.role, w.value, w.busy]));
   }
 
   A.ui = { showTip, hideTip, row, table };

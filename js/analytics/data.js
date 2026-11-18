@@ -207,14 +207,45 @@
         .sort((a, b) => b.value - a.value || b.ref - a.ref);
     };
 
-    // места дня против «в среднем в день» за PLACE_REF_DAYS дней до сегодня (любые дни недели)
+    // места и темы дня против «в среднем в день» за PLACE_REF_DAYS дней до сегодня (любые дни недели)
     const placeFrom = addDays(day, -PLACE_REF_DAYS);
     const placeDays = Math.max(1, Math.min(PLACE_REF_DAYS, span(model.firstDay > placeFrom ? model.firstDay : placeFrom, addDays(day, -1))));
-    const past = countBy(list.filter(t => t.day >= placeFrom && t.day < day), t => t.pids);
-    const places = [...countBy(nowT, t => t.pids).entries()].map(([id, v]) => {
-      const p = model.places[id], n = past.get(id) || 0;
-      return { key: id, label: p.name, area: p.area, value: v, ref: n / placeDays, isNew: !n };
-    }).sort((a, b) => b.value - a.value || a.ref - b.ref);
+    const pastList = list.filter(t => t.day >= placeFrom && t.day < day);
+    const vsPast = (key, label) => {
+      const past = countBy(pastList, key);
+      return [...countBy(nowT, key).entries()].map(([k, v]) => {
+        const n = past.get(k) || 0;
+        return Object.assign({ key: k, value: v, ref: n / placeDays, isNew: !n }, label(k));
+      }).sort((a, b) => b.value - a.value || a.ref - b.ref);
+    };
+    const places = vsPast(t => t.pids, id => ({ label: model.places[id].name, area: model.places[id].area }));
+    // темы — фиксированный список (geo.THEMES), поэтому день честно сравним с обычным; только заказы с анализом
+    const themes = vsPast(t => t.an ? t.an.themes : [], k => ({ label: k }));
+
+    // исполнители: нагрузка смены к этому часу против того же дня недели. Исполнители заполнены у взятых
+    // в работу заказов; «Зарегистрирована» без исполнителей — «ещё не взяты»
+    // заказов на человека — по участиям: совместный заказ засчитывается каждому участнику целиком (как в списке
+    // «кто сколько взял»); иначе в дни передач и совместной работы показатель проседал бы при росте нагрузки.
+    // joint — доля совместных (2+ исполнителя) среди взятых
+    const crew = ts => {
+      const taken = ts.filter(t => t.workers && t.workers.length), people = new Set(taken.flatMap(t => t.workers));
+      const touches = taken.reduce((a, t) => a + new Set(t.workers).size, 0);
+      return { people: people.size, taken: taken.length, perPerson: people.size ? touches / people.size : null,
+               joint: taken.length ? taken.filter(t => new Set(t.workers).size > 1).length / taken.length : null };
+    };
+    const crewNow = crew(nowT), crewRef = refs.map(d => crew(arrived(d, h)));
+    // у кого сейчас в работе (не сдано) — по тем же правилам, что «В работе сейчас»
+    const busy = new Map();
+    list.forEach(t => {
+      if (!t.startD || t.startD > now || t.startD.getTime() < now.getTime() - OPEN_MAX_DAYS * DAY) return;
+      const e = doneAt(t);
+      if (e && e <= now) return;
+      (t.workers || []).forEach(w => busy.set(w, (busy.get(w) || 0) + 1));
+    });
+    const takenToday = countBy(nowT, t => t.workers || []);
+    const workers = [...new Set([...takenToday.keys(), ...busy.keys()])].map(w => ({
+      key: w, label: w, role: model.people[w] || 'Дизайнер', value: takenToday.get(w) || 0, busy: busy.get(w) || 0,
+    })).sort((a, b) => b.value - a.value || b.busy - a.busy || a.label.localeCompare(b.label, 'ru'));
 
     return {
       day, now, h, refs, refWord: WEEKDAY_DAT[dayStart(day).getDay()], placeDays,
@@ -224,7 +255,12 @@
       late: Object.assign({ today: cur.late }, spread(refOpen.map(x => x.late))),
       analyzed: nowT.filter(t => t.an).length,
       curves: { arrived: arrivedCurve, open: openCurve },
-      products: slice(t => t.pkey), projects: slice(t => t.project), places,
+      products: slice(t => t.pkey), projects: slice(t => t.project), places, themes,
+      crew: { people: Object.assign({ today: crewNow.people }, spread(crewRef.map(x => x.people))),
+              perPerson: Object.assign({ today: crewNow.perPerson }, spread(crewRef.map(x => x.perPerson).filter(v => v != null))),
+              joint: Object.assign({ today: crewNow.joint }, spread(crewRef.map(x => x.joint).filter(v => v != null))),
+              notTaken: nowT.length - crewNow.taken },
+      workers,
     };
   }
 

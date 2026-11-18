@@ -227,6 +227,8 @@
 .an svg circle.today-dot { fill: var(--an-today); }
 .an svg line.now { stroke: var(--an-today); stroke-width: 1; stroke-dasharray: 2 3; }
 .an-nav[hidden], .an-sec[hidden] { display: none; }
+.an .kpis.an-crew { grid-template-columns: repeat(4, 1fr); margin: 4px 0 10px; align-items: start; }
+.an .kpis.an-crew .kpi .value { font-size: 24px; }
 .an-t-legend .ln { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--an-today); vertical-align: middle; margin-right: 6px; }
 .an-t-legend .ln.med { border-top: 1.5px dashed var(--an-muted); }
 .an-t-legend .bd { display: inline-block; width: 18px; height: 10px; background: var(--an-other); opacity: .55; vertical-align: middle; margin-right: 6px; }

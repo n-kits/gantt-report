@@ -272,9 +272,6 @@
       ensureD3().then(graphs, e => { $('people-graph').innerHTML = $('places-graph').innerHTML = `<div class="an-empty">${esc(e.message)}</div>`; });
       return;
     }
-    // высота общей панели фильтров — для липкой панели графа мест (на телефоне общая панель не липнет)
-    const bar = document.querySelector('.an-bar');
-    bar.parentElement.style.setProperty('--an-top', (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) + 'px');
     $('beta').value = st.beta; $('beta-v').textContent = st.beta.toFixed(2);
     $('beta-places').value = st.betaPlaces; $('beta-places-v').textContent = st.betaPlaces.toFixed(2);
     const list = filtered();
@@ -334,7 +331,7 @@
       // «сейчас» — часы браузера: данные приходят каждые 15 минут, файл переписывается только при изменениях
       const T = A.today(M, new Date(), A.byDims(st));
       status(T.day);
-      D.todayView({ M, st, T, $, update });
+      D.todayView({ M, st, T, $, update, roleColor });
       return;
     }
     const setGran = g => { st.gran = g; save(); D.days(ctx); };
@@ -348,9 +345,20 @@
   }
 
   // --- снаружи --------------------------------------------------------------
+  // высота липкой панели фильтров (--an-top) — для «← Лента» и липкой панели графа мест; на телефоне панель
+  // не липнет — 0. Следим за размером панели: переносы фильтров, смена ширины, первый показ вкладки.
+  // (раньше считалась только в graphs() после загрузки d3 — до этого и в режиме «Сегодня» «← Лента» наезжала на панель)
+  function setTop() {
+    const bar = document.querySelector('.an-bar');
+    if (bar) bar.parentElement.style.setProperty('--an-top', (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) + 'px');
+  }
+
   function mount() {
     if (mounted) return;
     mounted = true;
+    const bar = document.querySelector('.an-bar');
+    if (bar && root.ResizeObserver) new ResizeObserver(setTop).observe(bar);
+    setTop();
     st = load();
     if (!todayOn) st.mode = '';
     const tb = document.querySelector('#an-presets button[data-days="today"]');
