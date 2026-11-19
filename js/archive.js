@@ -3,6 +3,10 @@
  * (days/ГГГГ-ММ-ДД.json, зашифровано тем же паролем) и открытый days/index.json —
  * какие дни есть и когда их статусы сверены с Bitrix. Выбрали дату и число дней —
  * страница скачивает эти дни, расшифровывает и строит ленту на конец периода.
+ *
+ * Задачи прошлых дней, которые тянутся в период (зарегистрированы раньше, до CARRY_DAYS суток, а завершены
+ * после начала периода или ещё не завершены), тоже на ленте — как перенос в живой ленте (collect.add_carried):
+ * окно не расширяется, полоса от левого края со стрелкой «←».
  */
 (function (root) {
   'use strict';
@@ -12,6 +16,7 @@
   const L = root.GanttLive;
   if (!L) return;
   const POS_KEY = 'gantt-archive.period';
+  const CARRY_DAYS = 30;          // как carry_days сборщика
 
   const base = L.dataUrl.replace(/[^/]*$/, '') + 'days/';
   const $ = sel => document.querySelector(sel);
@@ -57,8 +62,8 @@
   }
 
   // --- загрузка -------------------------------------------------------------
-  async function fetchJson(url) {
-    const r = await fetch(url, { cache: 'no-store' });
+  async function fetchJson(url, cache) {
+    const r = await fetch(url, { cache: cache || 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
@@ -102,10 +107,23 @@
       return;
     }
     el.show.disabled = true;
-    let rows = [];
+    let rows = [], carried = [];
+    // начало периода — 04:00 первого дня; дни до него, откуда могут тянуться задачи
+    const from = fromIso(days[0]); from.setHours(M.DAY_START_HOUR);
+    const before = Array.from({ length: CARRY_DAYS }, (_, i) => addDays(days[0], -1 - i)).filter(d => index.days[d]);
+    const url = d => `${base}${d}.json?t=${encodeURIComponent(index.updatedAt || '')}`;
     try {
-      const files = await Promise.all(have.map(d => fetchJson(`${base}${d}.json?t=${encodeURIComponent(index.updatedAt || '')}`)));
+      const files = await Promise.all(have.map(d => fetchJson(url(d))));
       for (const f of files) rows = rows.concat((await L.decrypt(f.enc, password)).rows);
+      // прошлые дни — не к спеху: файл дня меняется только при сверке, адрес с ?t= — кэш браузера переспрашивает сервер
+      const old = await Promise.all(before.map(d => fetchJson(url(d), 'no-cache').then(f => L.decrypt(f.enc, password)).catch(() => null)));
+      for (const f of old) {
+        for (const r of (f && f.rows) || []) {
+          const fin = M.parseDt(r[3]);               // завершение: пусто — ещё идёт; после начала периода — тянется в него
+          if (!fin || fin >= from) carried.push(r);
+        }
+      }
+      rows = rows.concat(carried);
     } catch (e) {
       console.error(e);
       App.showMsg(e.name === 'OperationError'
@@ -121,8 +139,9 @@
     }
     const checked = have.map(d => index.days[d]).sort()[0];
     const label = `Архив Bitrix · ${span} · статусы на ${fmtAt(checked)}` +
+      (carried.length ? ` · с прошлых дней: ${carried.length}` : '') +
       (missing.length ? ` · нет данных за ${missing.map(dm).join(', ')}` : '');
-    App.loadRows(rows, `Архив Bitrix · ${span}`, periodNow(days[n - 1]), 'archive');
+    App.loadRows(rows, `Архив Bitrix · ${span}`, periodNow(days[n - 1]), 'archive', carried.length ? from : null);
     App.showMsg('');
     L.onArchiveShown(label);
   }

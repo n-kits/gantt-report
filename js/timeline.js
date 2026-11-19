@@ -108,7 +108,7 @@
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
         <tr><th>Вид продукции</th><td>${esc(t.product)}</td></tr>
         <tr><th>Статус</th><td><span class="tt-dot" style="background:${r.barColor}"></span>${esc(t.status)} ${note}</td></tr>
-        <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}${r.cutLeft ? ' <span class="tt-carry">раньше окна ленты — показана, пока не завершена</span>' : ''}</td></tr>
+        <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}${r.cutLeft ? ' <span class="tt-carry">раньше окна ленты — тянется в него</span>' : ''}</td></tr>
         <tr><th>Завершение</th><td>${finish}</td></tr>
         <tr><th>Крайний срок</th><td>${M.fmtFull(t.deadline)}</td></tr>
         <tr><th>Длительность</th><td>${fmtHours(t.durationH)}</td></tr>

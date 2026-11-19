@@ -542,6 +542,28 @@ ${fmtSigned(d.h)}` }),
     ].join('');
   }
 
+  // плавная линия через точки без ложных горбов — монотонная кубическая (Fritsch–Carlson, как d3.curveMonotoneX):
+  // проходит точно через часовые значения, между ними не выходит за соседние; нарастающий итог не «проседает»
+  function smooth(ps, move) {
+    const n = ps.length;
+    if (n < 3) return (move ? 'M' : 'L') + ps.map(p => p.join(',')).join('L');
+    const dx = [], d = [], m = [];
+    for (let i = 0; i < n - 1; i++) { dx.push(ps[i + 1][0] - ps[i][0]); d.push(dx[i] ? (ps[i + 1][1] - ps[i][1]) / dx[i] : 0); }
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for (let i = 0; i < n - 1; i++) {
+      if (!d[i]) { m[i] = m[i + 1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i + 1] / d[i], q = a * a + b * b;
+      if (q > 9) { const t = 3 / Math.sqrt(q); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    let s = `${move ? 'M' : 'L'}${ps[0][0]},${ps[0][1]}`;
+    for (let i = 0; i < n - 1; i++) {
+      const h3 = dx[i] / 3;
+      s += `C${ps[i][0] + h3},${ps[i][1] + m[i] * h3} ${ps[i + 1][0] - h3},${ps[i + 1][1] - m[i + 1] * h3} ${ps[i + 1][0]},${ps[i + 1][1]}`;
+    }
+    return s;
+  }
+
   // часы суток с 04:00: полоса — средняя половина обычных дней, пунктир — медиана, линия — сегодня до «сейчас»
   function dayCurve(el, pts, opts) {
     const W = widthOf(el), H = 220, L = 34, R = 10, T = 10, B = 26;
@@ -551,12 +573,12 @@ ${fmtSigned(d.h)}` }),
     for (let k = 0; k <= 24; k += 4) s += `<text x="${x(k)}" y="${H - 8}" text-anchor="middle">${hourLabel(k).slice(0, 2)}</text>`;
     const ref = pts.filter(p => p.med != null);
     if (ref.length) {
-      s += `<path class="t-band" d="M${ref.map(p => `${x(p.k)},${y(p.hi)}`).join('L')}L${ref.slice().reverse().map(p => `${x(p.k)},${y(p.lo)}`).join('L')}Z"/>`;
-      s += `<path class="median" d="M${ref.map(p => `${x(p.k)},${y(p.med)}`).join('L')}"/>`;
+      s += `<path class="t-band" d="${smooth(ref.map(p => [x(p.k), y(p.hi)]), true)}${smooth(ref.slice().reverse().map(p => [x(p.k), y(p.lo)]), false)}Z"/>`;
+      s += `<path class="median" d="${smooth(ref.map(p => [x(p.k), y(p.med)]), true)}"/>`;
     }
     const tod = pts.filter(p => p.today != null);
     if (tod.length) {
-      s += `<path class="today" d="M${tod.map(p => `${x(p.k)},${y(p.today)}`).join('L')}"/>`;
+      s += `<path class="today" d="${smooth(tod.map(p => [x(p.k), y(p.today)]), true)}"/>`;
       const last = tod[tod.length - 1];
       s += `<line class="now" x1="${x(last.k)}" x2="${x(last.k)}" y1="${T}" y2="${H - B}"/>` +
         `<circle class="today-dot" cx="${x(last.k)}" cy="${y(last.today)}" r="3.5"/>`;
