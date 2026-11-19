@@ -24,11 +24,14 @@
   const HOUR = 3600 * 1000;
 
   // Порядок колонок выгрузки Bitrix «Отображаемый список задач». Заголовков нет.
-  const FIELD_ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works'];
+  // mult, parent, checker — с 11.2026; в старых строках их нет — обычный заказ без головной задачи
+  const FIELD_ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works',
+    'mult', 'parent', 'checker'];
   const FIELD_TITLES = {
     name: 'Название задачи', status: 'Статус', start: 'Регистрация', finish: 'Завершение',
     executor: 'Текущий исполнитель', deadline: 'Крайний срок', project: 'Проект заказчика',
     product: 'Вид продукции', works: 'Выполнение задачи',
+    mult: 'Кратность прод.', parent: 'Родительская задача', checker: 'Проверяющий',
   };
 
   const C = {
@@ -182,6 +185,11 @@
       const finish = parseDt(get('finish'));
       const deadline = parseDt(get('deadline'));
       const status = String(get('status') == null ? '' : get('status')).trim();
+      // кратность: колонка или, в строках до 11.2026, суффикс «[2]» у вида продукции
+      const product = String(get('product') == null ? '' : get('product')).trim();
+      const pm = /\s*\[(\d+)\]\s*$/.exec(product);
+      const k = parseInt(get('mult'), 10) || (pm ? +pm[1] : 1);
+      const parentId = String(get('parent') == null ? '' : get('parent')).replace(/\D/g, '');
       const actualEnd = finish || now;
       const durationH = start ? (actualEnd - start) / HOUR : 0;
       let delayH = null;
@@ -207,7 +215,10 @@
         works: String(get('works') == null ? '' : get('works')),
         status: status || '—',
         deadline,
-        product: String(get('product') == null ? '' : get('product')).trim() || '—',
+        product: (pm ? product.slice(0, pm.index) : product).trim() || '—',
+        mult: k > 1 ? k : 1,
+        parentId,
+        checker: String(get('checker') == null ? '' : get('checker')).trim(),
         durationH,
         late,
         delayH,
@@ -219,7 +230,42 @@
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
     if (!tasks.length) throw new Error('Не удалось прочитать ни одной задачи');
-    return { tasks };
+    return { tasks: treeOrder(tasks) };
+  }
+
+  /*
+   * Головная задача и её подзадачи — одна единица продукции: подзадачи идут строками сразу под головой
+   * (isChild, head — номер головы), у головы — kids. Подзадача, чья голова не попала в ленту, — сама по себе
+   * (headOut). Дерево — в один уровень: подзадача подзадачи идёт отдельной строкой.
+   */
+  function treeOrder(tasks) {
+    const byId = new Map(tasks.filter(t => t.id).map(t => [t.id, t]));
+    const isKid = t => t.parentId && t.parentId !== t.id && byId.has(t.parentId) && !byId.get(t.parentId).parentId;
+    const kids = new Map();
+    tasks.forEach(t => {
+      t.isChild = false; t.kids = []; t.headOut = !!(t.parentId && !byId.has(t.parentId));
+      if (isKid(t)) { if (!kids.has(t.parentId)) kids.set(t.parentId, []); kids.get(t.parentId).push(t); }
+    });
+    const out = [];
+    tasks.forEach(t => {
+      if (isKid(t)) return;
+      out.push(t);
+      (kids.get(t.id) || []).forEach(c => { c.isChild = true; c.head = t.id; t.kids.push(c.id); out.push(c); });
+    });
+    return out;
+  }
+
+  // единицы продукции для «Одновременно в работе»: голова вместе с подзадачами — одна, с кратностью головы
+  function unitsOf(tasks) {
+    const by = new Map();
+    tasks.forEach(t => {
+      const key = t.isChild ? t.head : t.id || t;
+      if (!by.has(key)) by.set(key, { k: 1, parts: [] });
+      const u = by.get(key);
+      u.parts.push(t);
+      if (!t.isChild) u.k = t.mult || 1;
+    });
+    return [...by.values()];
   }
 
   function floorHour(d) {
@@ -357,12 +403,15 @@
         endIdx,
         dlIdx,
         cutLeft: !!(t.start && t.start < base),
+        isChild: t.isChild, hasKids: t.kids.length > 0, head: t.head || '',
       };
     });
 
+    // в работе в этом интервале: единица продукции (голова + подзадачи) — один раз, заказ «×2» — за два
+    const units = unitsOf(tasks);
     const capacity = hours.map(hs => {
       const he = addHours(hs, step);
-      const cnt = tasks.filter(t => t.start && t.actualEnd && t.start < he && t.actualEnd > hs).length;
+      const cnt = units.reduce((a, u) => a + (u.parts.some(t => t.start && t.actualEnd && t.start < he && t.actualEnd > hs) ? u.k : 0), 0);
       return { count: cnt, color: capacityColor(cnt), textColor: cnt >= 8 ? C.white : C.navy };
     });
 
@@ -389,7 +438,7 @@
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_UNPROC,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, stripId, shortName, guessNowFromFilename,
-    loadTasks, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
+    loadTasks, treeOrder, unitsOf, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
     fmtFull, fmtDMHM, taskUrl,
   };
   root.GanttModel = api;

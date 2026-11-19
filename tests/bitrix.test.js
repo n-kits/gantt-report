@@ -110,7 +110,7 @@
     }
     const r = B.parseBitrixTasks(doc);
     eq(r.columns.includes('description'), true);
-    eq(r.rows[0].length, 9, 'строки ленты не меняются');
+    eq(r.rows[0].length, B.ORDER.length, 'описание в строку ленты не попадает');
     eq(r.tasks[0].description, 'Дата монтажа: 27.09.2026 19:00\nЗаголовок: Прогноз\nМосква, Сочи...');
   });
 
@@ -170,6 +170,17 @@
     eq(G.aggregate({ items: [{ id: '1', start: '28.09.2026 03:49:00', deadline: '28.09.2026 09:00:00', toponyms: [sochi] }] }, at(28, 3, 55)).points[0].today, true,
       'в 03:55 сутки ещё 27.09 — заказ пока среди «сегодняшних» по регистрации');
     eq(G.effectiveStart(new Date(2026, 8, 28, 15), new Date(2026, 8, 29, 9)).getHours(), 15, 'дневной заказ — по регистрации');
+  });
+
+  await test('новые колонки: кратность, головная задача, проверяющий', () => {
+    const r = B.parseBitrixTasks(parse(`<table id="task-list-table"><thead><tr><th></th><th>Название задачи</th><th>Регистрация</th>
+      <th>Проект заказчика</th><th>Кратность прод.</th><th>Родительская задача</th><th>Проверяющий</th></tr></thead><tbody>
+      <tr class="task-list-item" data-id="201"><td></td><td><a class="task-title-link" href="/t/201/">Р24=Основа #201</a></td><td>14.09.2026 08:00</td>
+        <td>Факты (Р24)</td><td>1</td><td> Факты (Р24): Карта #200 СВО </td><td><a class="task-director-link" href="/u/1/">Иванов И.</a></td></tr>
+      <tr class="task-list-item" data-id="202"><td></td><td><a class="task-title-link">Карта #202</a></td><td>14.09.2026 09:00</td>
+        <td>Погода (Р24)</td><td>2</td><td></td><td></td></tr></tbody></table>`));
+    eq(r.rows.map(x => x.slice(9)), [['', '200', 'Иванов И.'], ['2', '', '']]);
+    eq(r.rows.map(x => x[6]), ['Факты (Р24)', 'Погода (Р24)'], '«Проверяющий» не путается с «Проект»');
   });
 
   const out = document.getElementById('out');

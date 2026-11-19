@@ -182,6 +182,13 @@
     if (f) loadFile(f);
   });
 
+  // ▾/▸ у головной задачи — свернуть или показать её подзадачи
+  el.scroller.addEventListener('click', e => {
+    const b = e.target.closest('.tree-t');
+    const table = b && b.closest('table.tl');
+    if (table && T.toggleTree) T.toggleTree(table, b.dataset.id);
+  });
+
   // подсказка по задаче
   el.scroller.addEventListener('mousemove', e => {
     const tr = e.target.closest('tr.task');

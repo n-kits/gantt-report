@@ -182,6 +182,25 @@
     eq(iso(noFrom.base), '2026-9-10 4:0:0', 'без from — как раньше');
   });
 
+  test('головная задача и подзадачи: строки под головой, кратность «×N», «Одновременно в работе» — по единице', () => {
+    const R = (name, start, fin, prod, mult, parent) => [name, 'Завершена', start, fin, 'Иванова А.', '', 'Факты (Р24)', prod, '', mult, parent, ''];
+    const rows = [
+      R('Голова #200', '14.09.26 08:00:00', '14.09.26 11:00:00', 'Анимированная карта', '', ''),
+      R('Другая #199', '14.09.26 08:30:00', '14.09.26 09:30:00', 'Плазма [3]', '', ''),   // до 11.2026 кратность — суффиксом
+      R('Р24=Основа #201', '14.09.26 08:00:00', '14.09.26 09:00:00', 'Стандартная карта', '', '200'),
+      R('Без головы #305', '14.09.26 10:00:00', '14.09.26 10:30:00', 'Плазма', '2', '304'),
+    ];
+    const tl = M.buildTimeline(rows, { now: d(2026, 9, 14, 12), step: 1 });
+    eq(tl.rows.map(r => r.task.id), ['200', '201', '199', '305'], 'подзадача сразу под головой');
+    eq(tl.rows.map(r => [r.isChild, r.hasKids]), [[false, true], [true, false], [false, false], [false, false]]);
+    const t = id => tl.tasks.find(x => x.id === id);
+    eq([t('199').product, t('199').mult, t('305').mult, t('305').headOut, t('201').head], ['Плазма', 3, 2, true, '200']);
+    // 08–09: голова с подзадачей — одна, «Другая» ×3 — три; 10–11: голова + «Без головы» ×2
+    eq(tl.capacity.slice(4, 8).map(c => c.count), [4, 4, 3, 0]);
+    const html = window.GanttTimeline.render(tl);
+    eq([html.includes('class="tree-t" data-id="200"'), html.includes('task child" data-head="200"'), html.includes('×3')], [true, true, true]);
+  });
+
   window.__testResults = results;
   const ok = results.filter(r => r.ok).length;
   const out = document.getElementById('out');

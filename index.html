@@ -169,7 +169,7 @@
     <div class="an-msg" id="an-msg" hidden></div>
     <div class="an-bar" role="group" aria-label="Фильтры">
       <div class="an-seg" id="an-presets" role="group" aria-label="Период">
-        <button type="button" data-days="today" hidden title="Сегодня против того же дня недели прошлых недель, к тому же часу">Сегодня</button>
+        <button type="button" data-days="today" title="Сегодня против того же дня недели прошлых недель, к тому же часу">Сегодня</button>
         <button type="button" data-days="7">7 дней</button>
         <button type="button" data-days="14">14 дней</button>
         <button type="button" data-days="30">30 дней</button>
@@ -385,6 +385,16 @@
           <div class="an-legend" id="an-people-legend"></div>
           <div class="an-graph" id="an-people-graph"></div>
           <details class="tbl"><summary>Таблица связей</summary><div class="scroll" id="an-people-table"></div></details>
+        </section>
+        <section class="an-card w12">
+          <h3>Проверяющие</h3>
+          <p class="an-cap">Проверку проходят все заказы; считаем по сданным. Проверка самого себя не засчитывается —
+            кроме совместного заказа с другим картографом. Головная задача и подзадача — один заказ, проверяющий — с подзадачи.</p>
+          <div class="kpis" id="an-checks-kpis"></div>
+          <div class="an-chart" id="an-checks"></div>
+          <details class="tbl"><summary>По видам продукции</summary><div class="scroll" id="an-checks-t"></div></details>
+          <details class="tbl"><summary>По проектам</summary><div class="scroll" id="an-checks-p"></div></details>
+          <details class="tbl"><summary>Номера заказов без проверки</summary><div class="scroll an-ids" id="an-checks-ids"></div></details>
         </section>
       </div>
     </div>

@@ -32,7 +32,58 @@
   const addDays = (s, k) => { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + k); return d.toISOString().slice(0, 10); };
   const span = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / DAY) + 1;
   const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-  const countBy = (list, f) => { const m = new Map(); list.forEach(t => [].concat(f(t)).forEach(k => { if (k) m.set(k, (m.get(k) || 0) + 1); })); return m; };
+  // wf — вес элемента (для заказов — кратность продукции: A.util.W); без него каждый элемент — 1
+  const countBy = (list, f, wf) => { const m = new Map(); list.forEach(t => { const w = wf ? wf(t) : 1; [].concat(f(t)).forEach(k => { if (k) m.set(k, (m.get(k) || 0) + w); }); }); return m; };
+  // кратность продукции: заказ «×2» — две единицы во всех объёмах (сколько заказов, нагрузка, «в работе»);
+  // время выполнения и сроки — по заказу один раз (сдан один раз и в один срок)
+  const W = t => t.w || 1;
+  const sumW = list => list.reduce((a, t) => a + W(t), 0);
+
+  // --- единицы продукции -------------------------------------------------------
+  // Головная задача и её подзадачи — одна единица продукции (обычно подзадача — картографу, голова — дизайнеру).
+  // Склеиваем здесь, а не в сборщике: архив и analytics.json хранят задачи как в Bitrix.
+  // Вид продукции единицы — по приоритету (решение пользователя, 20.11.2026): ролик (Overmap / Overglobe) →
+  // анимированная карта → стандартная карта → остальное (Растр 2D, Плазма…); при равенстве — вид головы.
+  // Кратность — головы (разные кратности в паре — редкость, разбирается вручную).
+  const stripMult = p => String(p || '').replace(/\s*\[\d+\]\s*$/, '').trim() || '—';   // «Плазма [2]» → «Плазма»
+  const productRank = p => /^Анимационный ролик/.test(p) ? 0 : p === 'Анимированная карта' ? 1 : p === 'Стандартная карта' ? 2 : 3;
+  function units(raw) {
+    const byId = new Map(raw.map(t => [t.id, t]));
+    const isHead = t => !t.parent || !byId.has(t.parent) || byId.get(t.parent).parent || t.parent === t.id;
+    const subs = new Map();
+    raw.forEach(t => { if (!isHead(t)) { if (!subs.has(t.parent)) subs.set(t.parent, []); subs.get(t.parent).push(t); } });
+    return raw.filter(isHead).map(h => {
+      const kids = subs.get(h.id) || [], parts = [h, ...kids];
+      const product = parts.map((p, i) => ({ p: stripMult(p.product), i }))
+        .sort((a, b) => productRank(a.p) - productRank(b.p) || a.i - b.i)[0].p;
+      const starts = parts.map(p => p.start).filter(Boolean).sort();
+      const places = [...new Set(parts.flatMap(p => p.places || []))];
+      const ans = parts.map(p => p.an).filter(Boolean);
+      return Object.assign({}, h, {
+        product, start: starts[0] || h.start,
+        workers: [...new Set(parts.flatMap(p => p.workers || []))].sort(),
+        places: places.length ? places : undefined,
+        an: ans.length ? { themes: [...new Set(ans.flatMap(a => a.themes || []))], conflict: (ans.find(a => a.conflict) || ans[0]).conflict || '' } : null,
+        checkers: [...new Set(parts.map(p => p.checker).filter(Boolean))],
+        w: h.k > 1 ? h.k : 1,
+        subs: kids.map(s => ({ id: s.id, status: s.status, start: s.start, finish: s.finish, deadline: s.deadline, workers: s.workers || [], k: s.k || 1 })),
+        orphan: !!(h.parent && !byId.has(h.parent)),   // подзадача, чья голова не попала в выборку Bitrix
+      });
+    });
+  }
+
+  // «Фамилия И. О.» / «Фамилия И.» → «Фамилия И» — так сравниваем проверяющего с исполнителями
+  const personKey = s => { const p = String(s || '').replace(/\./g, ' ').split(/\s+/).filter(Boolean); return p.length ? p[0] + ' ' + (p[1] || '').charAt(0) : ''; };
+  // проверка финальной графики: ok — есть проверяющий не из исполнителей или проверял участник совместного заказа
+  // с другим картографом; self — проверил сам себя; none — проверяющего нет
+  function checkOf(t, people) {
+    if (!t.checkers.length) return 'none';
+    const ws = t.workers.map(w => ({ w, k: personKey(w) }));
+    return t.checkers.some(c => {
+      const ck = personKey(c);
+      return !ws.some(x => x.k === ck) || ws.some(x => x.k !== ck && people[x.w] === 'Картограф');
+    }) ? 'ok' : 'self';
+  }
 
   // --- модель ---------------------------------------------------------------
   // место → (страна, регион) для иерархии «Связей»; у стран — «страна целиком»
@@ -45,7 +96,12 @@
     // копии: исходные данные не трогаем (повторная подготовка тех же данных даёт тот же результат)
     const places = Object.fromEntries(Object.entries(payload.places || {}).map(([id, p]) =>
       [id, Object.assign({}, p, placeGroup(p), { area: p.region || p.country || '' })]));
-    const tasks = payload.tasks.map(t => {
+    const people = payload.people || {};
+    // проверяющий «Фамилия И.» → имя из «Выполнения задачи» («Фамилия И. О.»), если такое одно
+    const byKey = new Map();
+    Object.keys(people).forEach(n => { const k = personKey(n); byKey.set(k, byKey.has(k) ? null : n); });
+    const fullName = c => byKey.get(personKey(c)) || c;
+    const tasks = units(payload.tasks).map(t => {
       const start = t.start ? new Date(t.start) : null, finish = t.finish ? new Date(t.finish) : null;
       const deadline = t.deadline ? new Date(t.deadline) : null;
       const done = DONE.includes(t.status) && finish;
@@ -54,6 +110,7 @@
         startD: start, finishD: finish, deadlineD: deadline, pkey: productKey(t.product),
         lead: done && start ? (finish - start) / HOUR : null,
         onTime: done && deadline ? finish <= deadline : null,
+        done: !!done, check: checkOf(t, people), checkers: t.checkers.map(fullName),
         pids,
         // регионы для «Темы и регионы» — по координатам мест (у стран и вне регионов — страна)
         areas: t.an ? [...new Set(pids.map(id => places[id].area).filter(Boolean))] : null,
@@ -62,7 +119,7 @@
     const days = Object.keys(payload.days || {}).sort();
     if (!days.length) tasks.forEach(t => days.includes(t.day) || days.push(t.day));
     days.sort();
-    return { tasks, places, people: payload.people || {}, checked: payload.days || {}, generatedAt: payload.generatedAt,
+    return { tasks, places, people, checked: payload.days || {}, generatedAt: payload.generatedAt,
              firstDay: days[0], lastDay: days[days.length - 1] };
   }
 
@@ -164,8 +221,8 @@
       if (!t.startD || t.startD > T || t.startD.getTime() < lo) continue;
       const e = doneAt(t);
       if (e && e <= T) continue;
-      open++;
-      if (t.deadlineD && t.deadlineD < T) late++;
+      open += W(t);
+      if (t.deadlineD && t.deadlineD < T) late += W(t);
     }
     return { open, late };
   }
@@ -191,7 +248,7 @@
       if (h < 24 && h > Math.floor(h)) out.splice(Math.floor(h) + 1, 0, Object.assign({ k: h, today: f(day, h), now: true }, spread(refs.map(d => f(d, h)))));
       return out;
     };
-    const arrivedCurve = curve((d, hh) => arrived(d, hh).length);
+    const arrivedCurve = curve((d, hh) => sumW(arrived(d, hh)));
     const openCurve = curve((d, hh) => openAt(list, at(d, hh)).open);
 
     const nowT = arrived(day, h);
@@ -200,7 +257,7 @@
 
     // разрезы «к этому часу»: сегодня и медиана тех же дней недели
     const slice = key => {
-      const t = countBy(nowT, key), r = refs.map(d => countBy(arrived(d, h), key));
+      const t = countBy(nowT, key, W), r = refs.map(d => countBy(arrived(d, h), key, W));
       const keys = new Set([...t.keys(), ...r.flatMap(m => [...m.keys()])]);
       return [...keys].map(k => ({ key: k, value: t.get(k) || 0, ref: quantile(r.map(m => m.get(k) || 0), 0.5) || 0 }))
         .filter(x => x.value || x.ref >= 0.5)
@@ -229,9 +286,9 @@
     // joint — доля совместных (2+ исполнителя) среди взятых
     const crew = ts => {
       const taken = ts.filter(t => t.workers && t.workers.length), people = new Set(taken.flatMap(t => t.workers));
-      const touches = taken.reduce((a, t) => a + new Set(t.workers).size, 0);
-      return { people: people.size, taken: taken.length, perPerson: people.size ? touches / people.size : null,
-               joint: taken.length ? taken.filter(t => new Set(t.workers).size > 1).length / taken.length : null };
+      const touches = taken.reduce((a, t) => a + new Set(t.workers).size * W(t), 0), n = sumW(taken);
+      return { people: people.size, taken: n, perPerson: people.size ? touches / people.size : null,
+               joint: n ? sumW(taken.filter(t => new Set(t.workers).size > 1)) / n : null };
     };
     const crewNow = crew(nowT), crewRef = refs.map(d => crew(arrived(d, h)));
     // у кого сейчас в работе (не сдано) — по тем же правилам, что «В работе сейчас»
@@ -240,17 +297,17 @@
       if (!t.startD || t.startD > now || t.startD.getTime() < now.getTime() - OPEN_MAX_DAYS * DAY) return;
       const e = doneAt(t);
       if (e && e <= now) return;
-      (t.workers || []).forEach(w => busy.set(w, (busy.get(w) || 0) + 1));
+      (t.workers || []).forEach(w => busy.set(w, (busy.get(w) || 0) + W(t)));
     });
-    const takenToday = countBy(nowT, t => t.workers || []);
+    const takenToday = countBy(nowT, t => t.workers || [], W);
     const workers = [...new Set([...takenToday.keys(), ...busy.keys()])].map(w => ({
       key: w, label: w, role: model.people[w] || 'Дизайнер', value: takenToday.get(w) || 0, busy: busy.get(w) || 0,
     })).sort((a, b) => b.value - a.value || b.busy - a.busy || a.label.localeCompare(b.label, 'ru'));
 
     return {
       day, now, h, refs, refWord: WEEKDAY_DAT[dayStart(day).getDay()], placeDays,
-      arrived: Object.assign({ today: nowT.length }, spread(refs.map(d => arrived(d, h).length))),
-      fullDay: spread(refs.map(d => (byDay.get(d) || []).length)),
+      arrived: Object.assign({ today: sumW(nowT) }, spread(refs.map(d => sumW(arrived(d, h))))),
+      fullDay: spread(refs.map(d => sumW(byDay.get(d) || []))),
       open: Object.assign({ today: cur.open }, spread(refOpen.map(x => x.open))),
       late: Object.assign({ today: cur.late }, spread(refOpen.map(x => x.late))),
       analyzed: nowT.filter(t => t.an).length,
@@ -259,29 +316,30 @@
       crew: { people: Object.assign({ today: crewNow.people }, spread(crewRef.map(x => x.people))),
               perPerson: Object.assign({ today: crewNow.perPerson }, spread(crewRef.map(x => x.perPerson).filter(v => v != null))),
               joint: Object.assign({ today: crewNow.joint }, spread(crewRef.map(x => x.joint).filter(v => v != null))),
-              notTaken: nowT.length - crewNow.taken },
+              notTaken: sumW(nowT) - crewNow.taken },
       workers,
     };
   }
 
   // --- графы связей ---------------------------------------------------------
   // пары узлов, встречающихся в одном заказе: [{a, b, w}]
-  function pairs(lists) {
+  // weights — вес каждого заказа (кратность), без него — 1
+  function pairs(lists, weights) {
     const w = new Map();
-    lists.forEach(items => {
-      const ks = [...new Set(items)].sort();
+    lists.forEach((items, li) => {
+      const ks = [...new Set(items)].sort(), wt = weights ? weights[li] : 1;
       for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
-        const k = ks[i] + '\u0002' + ks[j]; w.set(k, (w.get(k) || 0) + 1);
+        const k = ks[i] + '\u0002' + ks[j]; w.set(k, (w.get(k) || 0) + wt);
       }
     });
     return [...w.entries()].map(([k, v]) => { const [a, b] = k.split('\u0002'); return { a, b, w: v }; });
   }
 
   function graphPeople(model, list) {
-    const n = countBy(list, t => t.workers);
+    const n = countBy(list, t => t.workers, W);
     return {
       leaves: [...n.entries()].map(([name, k]) => ({ id: name, label: name, group: model.people[name] || 'Дизайнер', sub: null, n: k })),
-      edges: pairs(list.map(t => t.workers)), groupWord: 'Профиль', nested: false,
+      edges: pairs(list.map(t => t.workers), list.map(W)), groupWord: 'Профиль', nested: false,
     };
   }
 
@@ -302,6 +360,7 @@
     noFilter, isOn, passes, toggleItem, filterLabel, asFilter,
     today, openAt, workdayOf, DAY_START, REF_WEEKS,
     buckets, autoGran, bucketLabel, GRANS, MONTHS,
-    util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, quantile },
+    units, stripMult, productRank, personKey, checkOf,
+    util: { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, quantile, W, sumW },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

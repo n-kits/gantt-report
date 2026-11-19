@@ -24,7 +24,8 @@
   const idOf = name => (root.GanttModel ? root.GanttModel.extractId(name)
     : ((/#(\d+)(?![\s\S]*#\d)/.exec(String(name || '')) || [])[1] || ''));
 
-  // Все задачи ленты (порядок Bitrix: название, статус, регистрация, …, проект, вид продукции) + geo.items.
+  // Все задачи ленты (порядок Bitrix: название, статус, регистрация, …, проект, вид продукции, …, кратность,
+  // головная задача — GanttModel.FIELD_ORDER) + geo.items.
   // Задача без анализа LLM (ещё не разобрана, не удалось) — тоже строка, с пометкой pending.
   function fromLive(geo, rows) {
     const byId = {};
@@ -34,7 +35,11 @@
       const id = idOf(r[0]);
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      const base = { id, name: r[0] || `#${id}`, start: r[2] || '', project: r[6] || '', product: r[7] || '' };
+      // кратность — колонкой или, в строках до 11.2026, суффиксом «[N]» у вида продукции (как на ленте)
+      const product = String(r[7] || ''), pm = /\s*\[(\d+)\]\s*$/.exec(product);
+      const mult = parseInt(r[9], 10) || (pm ? +pm[1] : 1);
+      const base = { id, name: r[0] || `#${id}`, start: r[2] || '', project: r[6] || '',
+        product: pm ? product.slice(0, pm.index) : product, mult, parent: String(r[10] || '').replace(/\D/g, '') };
       out.push(byId[id] ? Object.assign(base, byId[id]) : Object.assign(base, { pending: true }));
     }
     for (const it of (geo && geo.items) || []) {          // анализ есть, а строки в ленте нет — всё равно показать
@@ -55,11 +60,30 @@
       `${km} <span class="coord">${esc(where)}</span></li>`;
   }
 
+  // головная задача и подзадачи — одна единица продукции: подзадачи сразу под головой, как на ленте;
+  // голова сортируется по регистрации, подзадачи идут за ней в любом направлении сортировки
+  function treeOrder(sorted) {
+    const ids = new Set(sorted.map(it => it.id));
+    const isKid = it => it.parent && it.parent !== it.id && ids.has(it.parent);
+    const kids = new Map();
+    sorted.forEach(it => { if (isKid(it)) { if (!kids.has(it.parent)) kids.set(it.parent, []); kids.get(it.parent).push(it); } });
+    const out = [];
+    sorted.forEach(it => {
+      if (isKid(it)) return;
+      out.push({ it, kid: false, headOut: !!it.parent });
+      (kids.get(it.id) || []).forEach(k => out.push({ it: k, kid: true, headOut: false }));
+    });
+    return out;
+  }
+
   function render(items, dir) {
     const time = it => { const d = G.parseStart(it.start); return d ? d.getTime() : 0; };
     const sorted = items.slice().sort((a, b) => (time(a) - time(b)) * (dir === 'desc' ? -1 : 1));
     const arrow = dir === 'desc' ? '▼' : '▲';
-    const body = sorted.map(it => {
+    const body = treeOrder(sorted).map(({ it, kid, headOut }) => {
+      const pre = kid ? `<span class="tree-l" title="Подзадача #${esc(it.parent)} — одна единица продукции">└</span>`
+        : headOut ? `<span class="tree-l" title="Подзадача; головная #${esc(it.parent)} не на ленте">↳</span>` : '';
+      const mult = it.mult > 1 ? `<span class="mult" title="Кратность продукции: ${it.mult}">×${it.mult}</span>` : '';
       const meta = (it.themes || []).join(' / ') + (it.conflict ? ` · ${it.conflict}` : '');
       const tops = (it.toponyms || []).map(toponymHtml).join('');
       const url = root.GanttModel && root.GanttModel.taskUrl(it.id);
@@ -68,8 +92,9 @@
         ? '<td colspan="2" class="pending-note">анализа пока нет — тема, тональность и топонимы появятся после разбора</td>'
         : `<td><div>${esc(meta)}</div><div class="meta">${esc(it.sentiment)}</div></td>` +
           `<td><ul>${tops || '<li class="miss">—</li>'}</ul></td>`;
-      return `<tr${it.pending ? ' class="pending" title="Задачу ещё не разобрала модель"' : ''}><td class="id">${id}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
-        `<td><div class="nm">${esc(it.name)}</div><div class="meta">${esc(it.project)} · ${esc(it.product)}</div></td>` +
+      const cls = [it.pending ? 'pending' : '', kid ? 'sub' : ''].filter(Boolean).join(' ');
+      return `<tr${cls ? ` class="${cls}"` : ''}${it.pending ? ' title="Задачу ещё не разобрала модель"' : ''}><td class="id">${id}</td><td class="t">${esc(String(it.start || '').slice(0, 16))}</td>` +
+        `<td><div class="nm">${pre}${mult}${esc(it.name)}</div><div class="meta">${esc(it.project)} · ${esc(it.product)}</div></td>` +
         `${analysis}</tr>`;
     }).join('');
     return `<table class="geo-tbl"><thead><tr><th>ID</th>` +
@@ -113,5 +138,5 @@
     });
   }
 
-  root.GanttGeoTable = { fromLive, render, mount, setOpen, SRC_LABEL };
+  root.GanttGeoTable = { fromLive, render, mount, setOpen, treeOrder, SRC_LABEL };
 })(window);

@@ -199,6 +199,15 @@ a.task-link:hover, a.task-link:focus-visible {
 }
 a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .tl td.name { text-align: left; color: var(--text-sm); padding-left: 5px; }
+/* головная задача и подзадачи — одна единица продукции: подзадачи строками под головой */
+.tl td.name.sub { padding-left: 14px; }
+.tl .tree-t { border: 0; background: none; padding: 0 3px 0 0; margin: 0; font: inherit; line-height: 1;
+  color: var(--text-sm); cursor: pointer; }
+.tl .tree-t:hover { color: #C45C26; }
+.tl .tree-l { color: #9CA3AF; padding-right: 3px; }
+/* кратность продукции «×2» */
+.mult { display: inline-block; margin-right: 4px; padding: 0 4px; border-radius: 3px; font-size: 10px; font-weight: 700;
+  line-height: 14px; vertical-align: 1px; background: #1B3A4B; color: #fff; }
 .tl td.exec { font-weight: 700; }
 .tl td.status { font-size: 10px; font-weight: 700; }
 
@@ -361,6 +370,9 @@ table.geo-tbl { border-collapse: collapse; width: 100%; font-size: 12.5px; backg
 .geo-tbl th { background: var(--header); color: #fff; position: sticky; top: 0; z-index: 1; font-weight: 700; }
 .geo-tbl th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .geo-tbl th.sortable:hover { background: var(--navy); }
+/* подзадача под головной задачей — как на ленте */
+.geo-tbl tr.sub td:nth-child(3) { padding-left: 18px; }
+.geo-tbl .tree-l { color: #9CA3AF; padding-right: 4px; }
 .geo-tbl .id, .geo-tbl .t { white-space: nowrap; }
 .geo-tbl .nm { font-weight: 700; }
 .geo-tbl .meta { color: var(--gray); font-size: 11.5px; }

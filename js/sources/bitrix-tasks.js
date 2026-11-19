@@ -25,8 +25,13 @@
     ['вид продукции', 'product'],
     ['выполнение задачи', 'works'],
     ['описание', 'description'],
+    ['кратность', 'mult'],
+    ['родительская', 'parent'],
+    ['проверяющий', 'checker'],
   ];
-  const ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works'];
+  // mult, parent, checker — с 11.2026, в конце: старые строки (без них) читаются как раньше
+  const ORDER = ['name', 'status', 'start', 'finish', 'executor', 'deadline', 'project', 'product', 'works',
+    'mult', 'parent', 'checker'];
   const REQUIRED = ['name', 'start'];
 
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -135,6 +140,16 @@
         return Array.from(td.children).length
           ? Array.from(td.children).map(el => clean(el.textContent)).filter(Boolean).join(' ')
           : clean(td.textContent);
+      case 'mult': {
+        // кратность продукции: 1 и пусто → '' (обычный заказ), иначе число строкой
+        const k = parseInt(clean(td.textContent), 10);
+        return k > 1 ? String(k) : '';
+      }
+      case 'parent': {
+        // «Название головной задачи #1221353» — номер, как в названии: последнее «#цифры»
+        const m = /#(\d+)(?![\s\S]*#\d)/.exec(clean(td.textContent));
+        return m ? m[1] : '';
+      }
       case 'description':
         // превью: Bitrix обрезает до ~200 символов и ставит «...» — полный текст на странице задачи
         return String(td.textContent || '').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();

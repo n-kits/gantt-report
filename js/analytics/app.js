@@ -22,16 +22,8 @@
 
   const $ = id => document.getElementById('an-' + id);
 
-  // «Сегодня» — пока на пробу, за флагом: ?today=1 включает кнопку в этом браузере (запоминается), ?today=0 — убирает
-  const TODAY_KEY = 'gantt-analytics.today';
-  const todayOn = (() => {
-    const q = new URLSearchParams(location.search).get('today');
-    try {
-      if (q === '1') localStorage.setItem(TODAY_KEY, '1');
-      else if (q === '0') localStorage.removeItem(TODAY_KEY);
-      return localStorage.getItem(TODAY_KEY) === '1';
-    } catch (e) { return q === '1'; }
-  })();
+  // «Сегодня» — для всех с 20.11.2026 (до этого — на пробу за флагом ?today=1); метку пробного периода убираем
+  try { localStorage.removeItem('gantt-analytics.today'); } catch (e) { /* не критично */ }
   let M = null, st = null, visible = false, dirty = false, d3wait = null, plotWait = null, sankeyWait = null, mounted = false;
 
   // --- состояние ------------------------------------------------------------
@@ -68,9 +60,9 @@
   // число заказов в списке — за выбранный период (без учёта самих фильтров), проекты без заказов в периоде — в конце
   const inPeriod = () => M.tasks.filter(t => A.inRange(t, st.from, st.to));
   const MS = {
-    project: { title: 'Проект', name: k => k, options: () => { const c = A.util.countBy(inPeriod(), t => t.project), all = A.util.countBy(M.tasks, t => t.project);
+    project: { title: 'Проект', name: k => k, options: () => { const c = A.util.countBy(inPeriod(), t => t.project, A.util.W), all = A.util.countBy(M.tasks, t => t.project, A.util.W);
       return [...all.keys()].map(k => ({ key: k, label: k, n: c.get(k) || 0, all: all.get(k) })).sort((a, b) => b.n - a.n || b.all - a.all); } },
-    product: { title: 'Вид продукции', name: productName, options: () => { const c = A.util.countBy(inPeriod(), t => t.pkey); return A.PRODUCTS.map(p => ({ key: p.key, label: p.label, n: c.get(p.key) || 0 })); } },
+    product: { title: 'Вид продукции', name: productName, options: () => { const c = A.util.countBy(inPeriod(), t => t.pkey, A.util.W); return A.PRODUCTS.map(p => ({ key: p.key, label: p.label, n: c.get(p.key) || 0 })); } },
   };
   let msOpen = null;
   function msClose() { if (!msOpen) return; $(msOpen).querySelector('.an-ms-pop').hidden = true; $(msOpen).querySelector('.an-ms-btn').setAttribute('aria-expanded', 'false'); msOpen = null; }
@@ -340,7 +332,7 @@
     status();
     D.kpis(ctx); D.days(ctx); D.projects(ctx); D.heat(ctx);
     D.lead(ctx); D.sla(ctx); D.margin(ctx); A.sankey.render(ctx);
-    D.execs(ctx); D.geo(ctx);
+    D.execs(ctx); D.checks?.(ctx); D.geo(ctx);
     graphs();
   }
 
@@ -360,9 +352,9 @@
     if (bar && root.ResizeObserver) new ResizeObserver(setTop).observe(bar);
     setTop();
     st = load();
-    if (!todayOn) st.mode = '';
+    // закэшированная страница могла остаться с кнопкой hidden (пробный период) — показываем
     const tb = document.querySelector('#an-presets button[data-days="today"]');
-    if (tb) tb.hidden = !todayOn;
+    if (tb) tb.hidden = false;
     bind();
   }
   function setData(payload) {

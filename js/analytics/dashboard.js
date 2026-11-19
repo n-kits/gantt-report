@@ -7,7 +7,8 @@
   'use strict';
 
   const A = root.GanttAnalytics;
-  const { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy } = A.util;
+  const { fmtN, fmt1, fmtPct, fmtH, plural, dm, dmy, dmhm, esc, addDays, span, median, countBy, sumW } = A.util;
+  const wt = A.util.W;   // вес заказа — кратность продукции (W занято шириной графика)
   const PRODUCTS = A.PRODUCTS, HOUR = A.HOUR;
 
   // --- общие элементы -------------------------------------------------------
@@ -81,11 +82,20 @@
     const W = widthOf(el), rowH = 26, bh = 16, valW = 44;
     const longest = Math.max(...items.map(it => textW(el, it.label)));
     const labelW = Math.min(Math.max(opts.labelW || 190, longest + 14), W * 0.46);
-    const H = items.length * rowH + 4;
+    // opts.axis — шкала снизу и вертикальная сетка (режим «Сегодня»: по ней читается черта «обычно»)
+    const axisH = opts.axis ? 20 : 0, rowsH = items.length * rowH + 4, H = rowsH + axisH;
     // it.ref — черта «обычно» поверх столбика (режим «Сегодня»): шкала учитывает и её
-    const max = Math.max(1, ...items.map(it => Math.max(it.value, it.ref || 0)));
+    const peak = Math.max(1, ...items.map(it => Math.max(it.value, it.ref || 0)));
+    const tk = opts.axis ? ticks(peak) : null, max = tk ? tk.top : peak;
     const x = v => (W - labelW - valW) * v / max;
-    let s = `<line class="baseline" x1="${labelW}" x2="${labelW}" y1="0" y2="${H}"/>`;
+    let s = '';
+    if (tk) tk.list.forEach((v, k) => {
+      const xx = Math.round(labelW + x(v)) + .5;
+      if (k) s += `<line class="gridline" x1="${xx}" x2="${xx}" y1="0" y2="${rowsH}"/>`;
+      s += `<text class="tick" x="${xx}" y="${rowsH + 14}" text-anchor="middle">${fmtN(v)}</text>`;
+    });
+    if (tk) s += `<line class="baseline" x1="${labelW}" x2="${W - valW}" y1="${rowsH + .5}" y2="${rowsH + .5}"/>`;
+    s += `<line class="baseline" x1="${labelW}" x2="${labelW}" y1="0" y2="${rowsH}"/>`;
     items.forEach((it, i) => {
       const yy = i * rowH + 4, w = Math.max(1, x(it.value));
       const dim = (opts.isActive ? !opts.isActive(it) : opts.active && opts.active !== it.key) ? ' class="dim"' : '';
@@ -111,9 +121,9 @@
   // === Поток ================================================================
   function kpis(ctx) {
     const { M, st, list } = ctx;
-    const n = list.length, days = span(st.from, st.to);
+    const n = sumW(list), days = span(st.from, st.to);   // объёмы — с кратностью продукции
     const prevTo = addDays(st.from, -1), prevFrom = addDays(st.from, -days);
-    const prev = prevFrom >= M.firstDay ? M.tasks.filter(t => A.inRange(t, prevFrom, prevTo) && A.byDims(st)(t)).length : null;
+    const prev = prevFrom >= M.firstDay ? M.tasks.filter(t => A.inRange(t, prevFrom, prevTo) && A.byDims(st)(t)).reduce((a, t) => a + wt(t), 0) : null;
     let delta = 'нет данных за предыдущий такой же период';
     if (prev != null && prev > 0) {
       const d = (n - prev) / prev;
@@ -121,7 +131,7 @@
     }
     const sla = list.filter(t => t.onTime != null), ok = sla.filter(t => t.onTime).length;
     const leads = list.map(t => t.lead).filter(v => v != null);
-    const team = list.filter(t => t.workers.length >= 2).length;
+    const team = sumW(list.filter(t => t.workers.length >= 2));
     ctx.$('kpis').innerHTML = [
       `<div class="kpi hero"><div class="label">Заказов за период</div><div class="value">${fmtN(n)}</div><div class="delta">${delta}</div></div>`,
       `<div class="kpi"><div class="label">В срок</div><div class="value">${fmtPct(sla.length ? ok / sla.length : null)}</div>` +
@@ -153,7 +163,7 @@
     const by = bs.map(b => { const o = Object.assign({}, b, { total: 0 }); PRODUCTS.forEach(p => { o[p.key] = 0; }); return o; });
     const idx = {};
     by.forEach((o, i) => o.days.forEach(d => { idx[d] = i; }));
-    list.forEach(t => { const o = by[idx[t.day]]; if (o) { o[t.pkey]++; o.total++; } });
+    list.forEach(t => { const o = by[idx[t.day]]; if (o) { o[t.pkey] += wt(t); o.total += wt(t); } });
     by.forEach(o => {
       o.sum = shown.reduce((a, p) => a + o[p.key], 0);
       // статусы на: самая ранняя сверка среди дней периода
@@ -224,13 +234,13 @@
     const { M, st } = ctx;
     // проекты — без фильтра по проекту, чтобы видеть выбранный среди остальных
     const list = M.tasks.filter(t => A.inRange(t, st.from, st.to) && A.passes(st.product, t.pkey));
-    const items = topN(countBy(list, t => t.project), 9, 'Другие').map(it => Object.assign(it, { color: it.other ? 'var(--an-other)' : 'var(--an-s1)' }));
+    const items = topN(countBy(list, t => t.project, wt), 9, 'Другие').map(it => Object.assign(it, { color: it.other ? 'var(--an-other)' : 'var(--an-s1)' }));
     hbars(ctx.$('projects'), items, {
       title: 'Проекты', labelW: 170,
       isActive: it => !A.isOn(st.project) || (!it.other && A.passes(st.project, it.key)),
       onClick: (it, e) => { if (!it.other) ctx.update({ project: A.toggleItem(st.project, it.key, e && (e.ctrlKey || e.metaKey)) }); },
     });
-    ctx.$('projects-t').innerHTML = table(['Проект', 'Заказов'], [...countBy(list, t => t.project).entries()].sort((a, b) => b[1] - a[1]));
+    ctx.$('projects-t').innerHTML = table(['Проект', 'Заказов'], [...countBy(list, t => t.project, wt).entries()].sort((a, b) => b[1] - a[1]));
   }
 
   // тепловая карта: день недели × час регистрации
@@ -246,7 +256,7 @@
     const el = ctx.$('heat');
     const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     const m = WD.map(() => new Array(24).fill(0));
-    ctx.list.forEach(t => { if (t.startD) m[(t.startD.getDay() + 6) % 7][t.startD.getHours()]++; });
+    ctx.list.forEach(t => { if (t.startD) m[(t.startD.getDay() + 6) % 7][t.startD.getHours()] += wt(t); });
     const max = Math.max(1, ...m.flat());
     const W = widthOf(el), L = 26, T = 4, B = 20, cw = (W - L) / 24, ch = Math.min(26, cw * 1.1), H = T + ch * 7 + B;
     let s = '';
@@ -459,11 +469,11 @@ ${fmtSigned(d.h)}` }),
     list.forEach(t => t.workers.forEach(w => { if (!groups.has(w)) groups.set(w, []); groups.get(w).push(t); }));
     const stat = ts => {
       const sl = ts.filter(t => t.onTime != null);
-      return { n: ts.length, med: median(ts.map(t => t.lead).filter(v => v != null)),
+      return { n: sumW(ts), med: median(ts.map(t => t.lead).filter(v => v != null)),
                ok: sl.length ? sl.filter(t => t.onTime).length / sl.length : null };
     };
     const all = [...groups.entries()].map(([k, ts]) => ({
-      key: k, label: k, value: ts.length, role: M.people[k] || 'Дизайнер',
+      key: k, label: k, value: sumW(ts), role: M.people[k] || 'Дизайнер',
       solo: stat(ts.filter(t => t.workers.length === 1)), team: stat(ts.filter(t => t.workers.length > 1)),
     })).sort((a, b) => b.value - a.value);
     all.forEach(it => { it.color = ctx.roleColor(it.role); });
@@ -483,6 +493,43 @@ ${fmtSigned(d.h)}` }),
       `<tr><th class="n">зак.</th><th class="n" title="медиана выполнения">мед.</th><th class="n">в срок</th><th class="n">зак.</th><th class="n" title="медиана выполнения">мед.</th><th class="n">в срок</th></tr></thead><tbody>` +
       all.map(it => `<tr><td title="${esc(it.label)} · ${esc(it.role)}"><span class="sw round" style="background:${it.color}"></span> <span class="nm">${esc(it.label)}</span></td>` +
         `<td class="n">${fmtN(it.value)}</td>${cells(it.solo)}${cells(it.team)}</tr>`).join('') + `</tbody></table>`;
+  }
+
+  // === Проверяющие (проверка финальной графики) ============================
+  // проверку обязаны проходить все заказы; считаем по сданным (Завершена / На рассмотрении с датой).
+  // Проверил сам себя — не проверка, кроме совместного заказа с другим картографом (A.checkOf)
+  const bitrixLink = id => { const u = root.GanttModel && root.GanttModel.taskUrl(id); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(id)}</a>` : esc(id); };
+  function checks(ctx) {
+    const { list } = ctx;
+    if (!ctx.$('checks')) return;                    // закэшированная страница без карточки
+    const done = list.filter(t => t.done);
+    const ok = done.filter(t => t.check === 'ok'), self = done.filter(t => t.check === 'self'), none = done.filter(t => t.check === 'none');
+    const n = sumW(done);
+    ctx.$('checks-kpis').innerHTML = [
+      `<div class="kpi"><div class="label">Проверено</div><div class="value">${fmtPct(n ? sumW(ok) / n : null)}</div><div class="delta">${fmtN(sumW(ok))} из ${fmtN(n)} сданных</div></div>`,
+      `<div class="kpi"><div class="label">Без проверяющего</div><div class="value">${fmtN(sumW(none))}</div><div class="delta">${fmtPct(n ? sumW(none) / n : null)} сданных</div></div>`,
+      `<div class="kpi"><div class="label">Проверил сам себя</div><div class="value">${fmtN(sumW(self))}</div><div class="delta">не в паре с другим картографом</div></div>`,
+      `<div class="kpi"><div class="label">Проверяющих</div><div class="value">${fmtN(new Set(ok.flatMap(t => t.checkers)).size)}</div><div class="delta">за период</div></div>`,
+    ].join('');
+    const by = countBy(ok, t => t.checkers, wt);
+    const items = [...by.entries()].map(([k, v]) => ({ key: k, label: k, value: v, color: ctx.roleColor(ctx.M.people[k] || 'Картограф') }))
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'ru'));
+    hbars(ctx.$('checks'), items.slice(0, 14), { title: 'Проверяющие', labelW: 130,
+      tip: it => `<div class="t">${esc(it.label)}</div>${row('', 'Проверил заказов', fmtN(it.value))}` });
+    // строка таблицы: сдано, проверено, без проверяющего, сам себя, доля проверенных — с кратностью
+    const line = (label, d) => {
+      const k = sumW(d), c = x => sumW(d.filter(t => t.check === x));
+      return k ? [label, k, c('ok'), c('none'), c('self'), fmtPct(c('ok') / k)] : null;
+    };
+    const head = name => [name, 'Сдано', 'Проверено', 'Без проверяющего', 'Сам себя', 'Доля проверенных'];
+    ctx.$('checks-t').innerHTML = table(head('Вид продукции'), PRODUCTS.map(p => line(p.label, done.filter(t => t.pkey === p.key))).filter(Boolean));
+    const el = ctx.$('checks-p');                  // закэшированная страница без таблицы — пропускаем
+    if (el) el.innerHTML = table(head('Проект'), [...new Set(done.map(t => t.project))]
+      .map(p => line(p, done.filter(t => t.project === p))).filter(Boolean).sort((x, y) => y[1] - x[1] || String(x[0]).localeCompare(String(y[0]), 'ru')));
+    // номера — чтобы посмотреть руками в Bitrix
+    const ids = ts => ts.length ? ts.map(t => bitrixLink(t.id)).join(', ') : '—';
+    ctx.$('checks-ids').innerHTML = `<p><b>Без проверяющего (${fmtN(none.length)}):</b> ${ids(none)}</p>` +
+      `<p><b>Проверил сам себя (${fmtN(self.length)}):</b> ${ids(self)}</p>`;
   }
 
   // === География ============================================================
@@ -598,7 +645,7 @@ ${fmtSigned(d.h)}` }),
   function vsPastBars(el, list, opts, T) {
     const items = list.slice(0, 15).map(p => Object.assign({}, p, { label: p.label + (p.isNew ? ' · новое' : ''), color: p.isNew ? 'var(--an-new)' : 'var(--an-s1)' }));
     if (!items.length) { el.innerHTML = `<div class="an-empty">${opts.empty}</div>`; return; }
-    hbars(el, items, { title: opts.title, labelW: 190,
+    hbars(el, items, { title: opts.title, labelW: 190, axis: true,
       tip: it => `<div class="t">${esc(it.label)}</div>${it.area ? `<div class="g">${esc(it.area)}</div>` : ''}` +
         row('', 'Заказов сегодня', fmtN(it.value)) +
         row('', `В среднем в день за ${T.placeDays} дн.`, it.isNew ? 'не было' : fmt1(it.ref)) });
@@ -622,10 +669,10 @@ ${fmtSigned(d.h)}` }),
 
     const tipRef = it => `<div class="t">${esc(it.label)}</div>${row('', 'Сегодня', fmtN(it.value))}${row('', `Медиана по ${T.refWord}`, fmtRef(it.ref))}`;
     const prod = T.products.map(p => { const P = PRODUCTS.find(x => x.key === p.key); return Object.assign({}, p, { label: P.label, color: P.color }); });
-    if (prod.length) hbars(ctx.$('t-products'), prod, { title: 'Виды продукции', labelW: 150, tip: tipRef });
+    if (prod.length) hbars(ctx.$('t-products'), prod, { title: 'Виды продукции', labelW: 150, axis: true, tip: tipRef });
     else ctx.$('t-products').innerHTML = '<div class="an-empty">Заказов к этому часу нет ни сегодня, ни обычно</div>';
     const proj = T.projects.slice(0, 10).map(p => Object.assign({}, p, { label: p.key, color: 'var(--an-s1)' }));
-    if (proj.length) hbars(ctx.$('t-projects'), proj, { title: 'Проекты', labelW: 150, tip: tipRef });
+    if (proj.length) hbars(ctx.$('t-projects'), proj, { title: 'Проекты', labelW: 150, axis: true, tip: tipRef });
     else ctx.$('t-projects').innerHTML = '<div class="an-empty">Заказов к этому часу нет ни сегодня, ни обычно</div>';
     const refTable = list => table(['', 'Сегодня', 'Медиана'], list.map(p => [p.label || p.key, p.value, fmtRef(p.ref)]));
     ctx.$('t-products-t').innerHTML = refTable(prod);
@@ -653,7 +700,7 @@ ${fmtSigned(d.h)}` }),
       `<div class="kpi"><div class="label">Ещё не взяты</div><div class="value">${fmtN(C.notTaken)}</div><div class="delta">заказы дня без исполнителя</div></div>`;
     const ws = T.workers.map(w => Object.assign({}, w, { color: ctx.roleColor(w.role) }));
     if (!ws.length) ctx.$('t-workers').innerHTML = '<div class="an-empty">Сегодня заказы ещё никто не брал</div>';
-    else hbars(ctx.$('t-workers'), ws.slice(0, 15), { title: 'Исполнители сегодня', labelW: 150,
+    else hbars(ctx.$('t-workers'), ws.slice(0, 15), { title: 'Исполнители сегодня', labelW: 150, axis: true,
       tip: it => `<div class="t">${esc(it.label)}</div><div class="g">${esc(it.role)}</div>` +
         row('', 'Взял заказов сегодня', fmtN(it.value)) + row('', 'В работе сейчас (не сдано)', fmtN(it.busy)) });
     ctx.$('t-workers-legend').innerHTML = [...new Set(ws.map(w => w.role))].sort()
@@ -663,5 +710,5 @@ ${fmtSigned(d.h)}` }),
   }
 
   A.ui = { showTip, hideTip, row, table };
-  A.dashboard = { kpis, days, projects, heat, lead, sla, margin, execs, geo, todayView };
+  A.dashboard = { kpis, days, projects, heat, lead, sla, margin, execs, checks, geo, todayView };
 })(typeof window !== 'undefined' ? window : globalThis);

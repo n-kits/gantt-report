@@ -57,7 +57,8 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
     days     — {день: когда статусы дня последний раз сверены с Bitrix};
     people   — {«Иванов И. И.»: профиль} — все, кто есть в «Выполнении задачи»;
     places   — {pid: место} — регион и страна по координатам (places.py), подпись с «(река)» у омонимов;
-    tasks    — заказы: поля ленты, исполнители, анализ LLM (темы, конфликт) и ссылки на места."""
+    tasks    — заказы: поля ленты, исполнители, анализ LLM (темы, конфликт) и ссылки на места;
+               k — кратность (>1), parent — номер головной задачи, checker — проверяющий."""
     analysis = {tid: (themes, conflict) for tid, themes, conflict in db.execute("SELECT task_id, themes, conflict FROM analysis")}
     places, task_places = {}, {}
     for tid, name, kind, country, region, pid in db.execute(
@@ -76,8 +77,10 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
             p["name"] += " (река)"
 
     people, tasks = {}, []
-    for tid, day, status, start, finish, deadline, project, product, works in db.execute(
-            """SELECT id, day, status, start, finish, deadline, project, product, works
+    have = {r[1] for r in db.execute("PRAGMA table_info(tasks)")}
+    extra = ", ".join(c if c in have else f"NULL AS {c}" for c in ("mult", "parent", "checker"))
+    for tid, day, status, start, finish, deadline, project, product, works, mult, parent, checker in db.execute(
+            f"""SELECT id, day, status, start, finish, deadline, project, product, works, {extra}
                FROM tasks WHERE day IS NOT NULL ORDER BY day, id"""):
         workers = sorted({short(n) for n in PERSON.findall(works or "")})
         for w in workers:
@@ -89,6 +92,14 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
              "an": {"themes": [x for x in (a[0] or "").split(" / ") if x], "conflict": a[1] or ""} if a else None}
         if task_places.get(tid):
             t["places"] = task_places[tid]
+        # с 11.2026: кратность продукции, головная задача, проверяющий («Фамилия И.») — только если есть.
+        # Головная и подзадачи — одна единица продукции: склеивает их сайт (GanttAnalytics.prepare), здесь — сырые задачи
+        if mult and str(mult).isdigit() and int(mult) > 1:
+            t["k"] = int(mult)
+        if parent:
+            t["parent"] = parent
+        if checker:
+            t["checker"] = checker
         tasks.append(t)
     days = {day: checked for day, checked in db.execute(
         "SELECT day, MAX(last_seen) FROM tasks WHERE day IS NOT NULL GROUP BY day ORDER BY day")}

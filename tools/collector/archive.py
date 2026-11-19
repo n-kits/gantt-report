@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS toponyms (
 DROP TABLE IF EXISTS exports;   -- учёт ежедневных Excel-выгрузок (до 11.2026); выгрузка теперь по запросу
 """
 
-TASK_COLS = ["name", "status", "start", "finish", "executor", "deadline", "project", "product", "works"]
+# mult — кратность продукции ('' = 1), parent — номер головной задачи, checker — «Проверяющий» (с 11.2026)
+TASK_COLS = ["name", "status", "start", "finish", "executor", "deadline", "project", "product", "works",
+             "mult", "parent", "checker"]
+NEW_COLS = ("mult", "parent", "checker")
 
 
 def parse_dt(s: str) -> datetime | None:
@@ -69,6 +72,10 @@ def connect(path: Path) -> sqlite3.Connection:
     for col in ("region", "country", "pid"):
         if col not in have:
             db.execute(f"ALTER TABLE toponyms ADD COLUMN {col} TEXT")
+    have = {r[1] for r in db.execute("PRAGMA table_info(tasks)")}
+    for col in NEW_COLS:
+        if col not in have:
+            db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
     db.commit()
     return db
 
@@ -80,16 +87,19 @@ def update(db: sqlite3.Connection, cfg: dict, res: dict, geo_part: dict | None, 
     with db:
         for row, t in zip(res["rows"], res.get("tasks", [])):
             vals = dict(zip(TASK_COLS, row))
+            for col in NEW_COLS:        # строка от парсера до 11.2026 — без новых полей
+                vals.setdefault(col, "")
             day = workday(vals["start"], cfg["day_start_hour"])
             db.execute(
                 """INSERT INTO tasks (id, day, name, status, start, finish, executor, deadline, project, product, works,
-                                      url, description, first_seen, last_seen)
+                                      mult, parent, checker, url, description, first_seen, last_seen)
                    VALUES (:id, :day, :name, :status, :start, :finish, :executor, :deadline, :project, :product, :works,
-                           :url, :description, :now, :now)
+                           :mult, :parent, :checker, :url, :description, :now, :now)
                    ON CONFLICT(id) DO UPDATE SET
                      day=excluded.day, name=excluded.name, status=excluded.status, start=excluded.start,
                      finish=excluded.finish, executor=excluded.executor, deadline=excluded.deadline,
-                     project=excluded.project, product=excluded.product, works=excluded.works, url=excluded.url,
+                     project=excluded.project, product=excluded.product, works=excluded.works, mult=excluded.mult, parent=excluded.parent,
+                     checker=excluded.checker, url=excluded.url,
                      description=COALESCE(excluded.description, tasks.description), last_seen=excluded.last_seen""",
                 dict(vals, id=t["id"], day=day, url=t.get("url", ""), description=texts.get(t["id"]) or None, now=now))
             n += 1
@@ -115,6 +125,15 @@ def save_analysis(db: sqlite3.Connection, items: list[dict], now: str | None = N
             [(it["id"], i, p.get("name"), p.get("kind"), p.get("macro", ""), p.get("iso"), p.get("lat"), p.get("lon"),
               p.get("src", ""), p.get("dkm"), 1 if p.get("approx") else 0,
               p.get("region", ""), p.get("country", ""), p.get("pid")) for i, p in enumerate(it["toponyms"])])
+
+
+def mult_mismatch(db: sqlite3.Connection) -> list[tuple[str, int, str, int]]:
+    """Головная задача и подзадача с разной кратностью продукции: [(подзадача, её кратность, головная, её кратность)].
+    Сайт берёт кратность головы, но такие пары — редкость, их разбирают вручную (сборщик пишет предупреждение)."""
+    k = lambda v: int(v) if str(v or "").isdigit() and int(v) > 1 else 1
+    rows = db.execute("""SELECT s.id, s.mult, h.id, h.mult FROM tasks s JOIN tasks h ON h.id = s.parent
+                         WHERE s.parent IS NOT NULL AND s.parent <> ''""").fetchall()
+    return [(s, k(sm), h, k(hm)) for s, sm, h, hm in rows if k(sm) != k(hm)]
 
 
 def prune(db: sqlite3.Connection, days: list[str], seen: set[str]) -> int:
@@ -161,7 +180,7 @@ def day_rows(db: sqlite3.Connection, day: str) -> list[list[str]]:
 
 TASK_HEADERS = ["ID", "Рабочий день", "Регистрация", "Задача", "Статус", "Завершение", "Исполнитель",
                 "Крайний срок", "Проект заказчика", "Вид продукции", "Выполнение задачи",
-                "Тема", "Конфликт", "Тональность", "Топонимы", "Описание", "Модель", "Последнее обновление", "Ссылка"]
+                "Кратность", "Головная задача", "Проверяющий", "Тема", "Конфликт", "Тональность", "Топонимы", "Описание", "Модель", "Последнее обновление", "Ссылка"]
 TOP_HEADERS = ["ID", "Задача", "Топоним", "Тип", "Регион", "Страна", "Регион по версии LLM", "Страна (ISO)",
                "Широта", "Долгота", "Источник координат", "Расхождение с оценкой, км", "Приблизительно"]
 SRC_LABEL = {"cache": "кэш", "nominatim": "Nominatim", "llm": "оценка модели", "basemap": "полигон страны", "manual": "вручную"}
@@ -175,7 +194,7 @@ def export(db: sqlite3.Connection, cfg: dict, d_from: str, d_to: str, path: Path
 
     tasks = db.execute(
         """SELECT t.id, t.day, t.start, t.name, t.status, t.finish, t.executor, t.deadline, t.project, t.product, t.works,
-                  a.themes, a.conflict, a.sentiment,
+                  t.mult, t.parent, t.checker, a.themes, a.conflict, a.sentiment,
                   (SELECT group_concat(name, ', ') FROM (SELECT name FROM toponyms WHERE task_id = t.id ORDER BY idx)),
                   t.description, a.model, t.last_seen, t.url
            FROM tasks t LEFT JOIN analysis a ON a.task_id = t.id
@@ -209,8 +228,8 @@ def export(db: sqlite3.Connection, cfg: dict, d_from: str, d_to: str, path: Path
     ws = wb.active
     ws.title = "Задачи"
     sheet(ws, TASK_HEADERS,
-          [list(r[:18]) + [base + r[18] if r[18] and r[18].startswith("/") else r[18]] for r in tasks],
-          [10, 12, 17, 50, 15, 17, 18, 17, 18, 20, 40, 22, 18, 13, 40, 60, 18, 19, 30])
+          [list(r[:21]) + [base + r[21] if r[21] and r[21].startswith("/") else r[21]] for r in tasks],
+          [10, 12, 17, 50, 15, 17, 18, 17, 18, 20, 40, 10, 12, 18, 22, 18, 13, 40, 60, 18, 19, 30])
     sheet(wb.create_sheet("Топонимы"), TOP_HEADERS,
           [list(r[:10]) + [SRC_LABEL.get(r[10], r[10]), r[11], "да" if r[12] else ""] for r in tops],
           [10, 50, 28, 11, 30, 16, 30, 12, 10, 10, 18, 14, 14])

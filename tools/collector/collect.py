@@ -830,8 +830,28 @@ def save_archive(cfg: dict, res: dict, geo_part: dict | None) -> None:
         gone = archive.prune(db, days, {t["id"] for t in res.get("tasks", [])})
         archive.settle(db, cfg, frm)
         log.info("Архив: обновлено задач %s%s", n, f", удалено (нет в Bitrix) {gone}" if gone else "")
+        warn_mult_mismatch(db)
     finally:
         db.close()
+
+
+def warn_mult_mismatch(db) -> None:
+    """Предупреждение в журнал: у головной задачи и подзадачи разная кратность продукции — разобрать вручную
+    (сайт пока берёт кратность головы). Каждую пару — один раз, пока кратности не изменятся (mult-mismatch.json)."""
+    import archive
+    path = APP_DIR / "mult-mismatch.json"
+    try:
+        seen = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        seen = {}
+    now = {f"{s}/{h}": [sk, hk] for s, sk, h, hk in archive.mult_mismatch(db)}
+    for key, (sk, hk) in now.items():
+        if seen.get(key) != [sk, hk]:
+            s, h = key.split("/")
+            log.warning("Кратность: у подзадачи %s ×%s, у головной %s ×%s — разобрать вручную (на сайте считается ×%s)",
+                        s, sk, h, hk, hk)
+    if now != seen:
+        path.write_text(json.dumps(now, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def migrate_scrub(cfg: dict) -> None:

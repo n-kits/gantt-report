@@ -11,6 +11,32 @@
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
   ));
 
+  // свёрнутые головные задачи (номера): по умолчанию подзадачи раскрыты; помним до перезагрузки страницы
+  const collapsed = new Set();
+
+  // «Задача»: у головы — ▾/▸ (свернуть подзадачи), у подзадачи — «└» с отступом,
+  // у подзадачи без головы на ленте — «↳»; кратность продукции — шильдик «×2»
+  function nameCell(r) {
+    const t = r.task;
+    let pre = '';
+    if (r.hasKids) {
+      const c = collapsed.has(t.id);
+      pre = `<button type="button" class="tree-t" data-id="${esc(t.id)}" aria-expanded="${!c}" title="${c ? 'Показать' : 'Скрыть'} подзадачи">${c ? '▸' : '▾'}</button>`;
+    } else if (r.isChild) pre = '<span class="tree-l">└</span>';
+    else if (t.headOut) pre = `<span class="tree-l" title="Подзадача; головная #${esc(t.parentId)} не на ленте">↳</span>`;
+    const mult = t.mult > 1 ? `<span class="mult" title="Кратность продукции: ${t.mult}">×${t.mult}</span>` : '';
+    return `${pre}${mult}${esc(t.short)}`;
+  }
+
+  // свернуть / раскрыть подзадачи головы — без перерисовки таблицы
+  function toggleTree(table, id) {
+    const c = !collapsed.has(id);
+    if (c) collapsed.add(id); else collapsed.delete(id);
+    table.querySelectorAll('tr.task.child').forEach(tr => { if (tr.dataset.head === id) tr.hidden = c; });
+    const b = table.querySelector(`.tree-t[data-id="${CSS.escape(id)}"]`);
+    if (b) { b.textContent = c ? '▸' : '▾'; b.setAttribute('aria-expanded', String(!c)); b.title = `${c ? 'Показать' : 'Скрыть'} подзадачи`; }
+  }
+
   function render(tl) {
     const slotW = tl.step === 1 ? 24 : 30;
     const out = [];
@@ -38,10 +64,11 @@
     out.push('<tbody>');
     tl.rows.forEach((r, ri) => {
       const t = r.task;
-      out.push(`<tr class="task" data-i="${ri}">`);
+      const child = r.isChild ? ` child" data-head="${esc(r.head)}"${collapsed.has(r.head) ? ' hidden' : ''}` : '"';
+      out.push(`<tr class="task${r.hasKids ? ' head' : ''}${child} data-i="${ri}">`);
       const url = M.taskUrl(t.id);
       out.push(`<td class="fz fz1 id">${url ? `<a class="task-link" href="${esc(url)}" target="_blank" rel="noopener" title="Открыть в Bitrix">${esc(t.id)}</a>` : esc(t.id)}</td>`);
-      out.push(`<td class="fz fz2 name">${esc(t.short)}</td>`);
+      out.push(`<td class="fz fz2 name${r.isChild ? ' sub' : ''}">${nameCell(r)}</td>`);
       out.push(`<td class="fz fz3 exec" style="color:${r.execColor}">${esc(r.execShort)}</td>`);
       out.push(`<td class="fz fz4 status" style="color:${r.statusColor};background:${r.statusBg}">${esc(t.status)}</td>`);
       for (let h = 0; h < tl.nSlots; h++) {
@@ -106,7 +133,11 @@
       <table>
         <tr><th>Проект</th><td>${esc(t.project || '—')}</td></tr>
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
-        <tr><th>Вид продукции</th><td>${esc(t.product)}</td></tr>
+        <tr><th>Вид продукции</th><td>${esc(t.product)}${t.mult > 1 ? ` <span class="mult">×${t.mult}</span>` : ''}</td></tr>
+        ${t.isChild ? `<tr><th>Головная</th><td>#${esc(t.head)} — одна единица продукции</td></tr>` : ''}
+        ${t.headOut ? `<tr><th>Головная</th><td>#${esc(t.parentId)} — не на ленте</td></tr>` : ''}
+        ${t.kids.length ? `<tr><th>Подзадачи</th><td>${t.kids.map(k => '#' + esc(k)).join(', ')}</td></tr>` : ''}
+        ${t.checker ? `<tr><th>Проверяющий</th><td>${esc(t.checker)}</td></tr>` : ''}
         <tr><th>Статус</th><td><span class="tt-dot" style="background:${r.barColor}"></span>${esc(t.status)} ${note}</td></tr>
         <tr><th>Регистрация</th><td>${M.fmtFull(t.start)}${r.cutLeft ? ' <span class="tt-carry">раньше окна ленты — тянется в него</span>' : ''}</td></tr>
         <tr><th>Завершение</th><td>${finish}</td></tr>
@@ -135,5 +166,5 @@
     return out.filter(Boolean);
   }
 
-  root.GanttTimeline = { render, tooltipHtml, slotIndex, columnCells, fmtHours, fmtDelta };
+  root.GanttTimeline = { render, tooltipHtml, slotIndex, columnCells, fmtHours, fmtDelta, toggleTree };
 })(window);
