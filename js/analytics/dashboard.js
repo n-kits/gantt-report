@@ -570,7 +570,9 @@ ${fmtSigned(d.h)}` }),
     const tk = ticks(Math.max(1, ...pts.map(p => Math.max(p.today || 0, p.hi || 0)))), max = tk.top;
     const x = k => L + (W - L - R) * k / 24, y = v => T + (H - T - B) * (1 - v / max);
     let s = yAxis(tk, y, L, W, R);
-    for (let k = 0; k <= 24; k += 4) s += `<text x="${x(k)}" y="${H - 8}" text-anchor="middle">${hourLabel(k).slice(0, 2)}</text>`;
+    // подпись каждого часа; на узком экране (телефон) не влезают — через 2 или 4 часа
+    const cwH = (W - L - R) / 24, stepH = cwH >= 20 ? 1 : cwH >= 11 ? 2 : 4;
+    for (let k = 0; k <= 24; k += stepH) s += `<text x="${x(k)}" y="${H - 8}" text-anchor="middle">${hourLabel(k).slice(0, 2)}</text>`;
     const ref = pts.filter(p => p.med != null);
     if (ref.length) {
       s += `<path class="t-band" d="${smooth(ref.map(p => [x(p.k), y(p.hi)]), true)}${smooth(ref.slice().reverse().map(p => [x(p.k), y(p.lo)]), false)}Z"/>`;
