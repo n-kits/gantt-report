@@ -159,6 +159,25 @@
   const COL = {};
   FIELD_ORDER.forEach((k, i) => { COL[k] = i; });
 
+  // «Выполнение задачи»: «Иванов Иван Иванович (27.09.2026 20:55) = 2D: …» — блок на каждую отметку
+  const WORK_RE = /([А-ЯЁ][а-яё-]+(?:\s+[А-ЯЁ][а-яё-]+){1,2})\s*\((\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})\)\s*=/g;
+  // «Иванов Иван Иванович» / «Иванов И.» → «Иванов И» — так сравниваем исполнителя с отметившимися
+  const personKey = s => { const p = String(s || '').replace(/\./g, ' ').split(/\s+/).filter(Boolean); return p.length ? p[0] + ' ' + (p[1] || '').charAt(0) : ''; };
+
+  // Кто отмечался в «Выполнении задачи» — от последнего к первому, по последней отметке человека:
+  // [{ name, short, at, key }], человек один раз
+  function participants(works) {
+    const out = new Map();
+    let m;
+    WORK_RE.lastIndex = 0;
+    while ((m = WORK_RE.exec(String(works || '')))) {
+      const at = makeDate(+m[4], +m[3], +m[2], +m[5], +m[6], 0);
+      const k = personKey(m[1]);
+      if (!out.has(k) || (at && (!out.get(k).at || at > out.get(k).at))) out.set(k, { name: m[1], short: m[1].split(/\s+/)[0], at, key: k });
+    }
+    return [...out.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
+  }
+
   function isEmptyRow(raw) {
     return !raw || raw.every(c => c == null || String(c).trim() === '');
   }
@@ -396,6 +415,9 @@
         barMark: barMarkColor(barColor(t)),
         barOutline: barOutline(t),
         execShort: t.executor ? t.executor.split(/\s+/)[0] : '—',
+        // совместная задача: после текущего исполнителя — остальные отметившиеся, от последнего к первому
+        coExec: participants(t.works).filter(p => p.key !== personKey(t.executor)).map(p => p.short),
+        people: participants(t.works),
         execColor: execColors.get(t.executor) || '#1F2937',
         statusColor: STATUS_COLOR[t.status] || C.gray,
         statusBg: STATUS_BG[t.status] || C.gray_bg,
@@ -438,7 +460,7 @@
     STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_UNPROC,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, stripId, shortName, guessNowFromFilename,
-    loadTasks, treeOrder, unitsOf, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
+    loadTasks, treeOrder, unitsOf, participants, personKey, inferWindow, barColor, barOutline, capacityColor, buildTimeline,
     fmtFull, fmtDMHM, taskUrl,
   };
   root.GanttModel = api;

@@ -209,6 +209,9 @@ a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .mult { display: inline-block; margin-right: 4px; padding: 0 4px; border-radius: 3px; font-size: 10px; font-weight: 700;
   line-height: 14px; vertical-align: 1px; background: #1B3A4B; color: #fff; }
 .tl td.exec { font-weight: 700; }
+/* совместная задача: после текущего исполнителя — остальные отметившиеся в «Выполнении задачи» */
+.tl td.exec .co { font-weight: 400; color: #6B7280; }
+.tt-at { color: #6B7280; font-size: 11px; }
 .tl td.status { font-size: 10px; font-weight: 700; }
 
 /* ячейки времени */

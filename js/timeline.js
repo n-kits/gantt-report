@@ -37,12 +37,29 @@
     if (b) { b.textContent = c ? '▸' : '▾'; b.setAttribute('aria-expanded', String(!c)); b.title = `${c ? 'Показать' : 'Скрыть'} подзадачи`; }
   }
 
+  // ширина колонки «Исп.» — под самую длинную строку «Исполнитель / участник / …» (не уже 86 px)
+  let measureCtx = null;
+  function execWidth(rows) {
+    if (typeof document === 'undefined') return 86;
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    const fam = getComputedStyle(document.body).fontFamily;
+    const w = (font, s) => { measureCtx.font = font; return measureCtx.measureText(s).width; };
+    const max = Math.max(0, ...rows.map(r => w(`700 11px ${fam}`, r.execShort) +
+      (r.coExec.length ? w(`400 11px ${fam}`, ' / ' + r.coExec.join(' / ')) : 0)));
+    return Math.max(86, Math.ceil(max) + 12);
+  }
+
+  function execCell(r) {
+    const co = r.coExec.length ? `<span class="co"> / ${r.coExec.map(esc).join(' / ')}</span>` : '';
+    return `<span style="color:${r.execColor}">${esc(r.execShort)}</span>${co}`;
+  }
+
   function render(tl) {
     const slotW = tl.step === 1 ? 24 : 30;
     const out = [];
     // точная ширина = сумма колонок: иначе длинные названия растягивают колонки
     // и закреплённая часть расходится со строками «Задача» / «Одновременно в работе»
-    out.push(`<table class="tl" style="--slot-w:${slotW}px; --n-slots:${tl.nSlots}">`);
+    out.push(`<table class="tl" style="--slot-w:${slotW}px; --n-slots:${tl.nSlots}; --w-exec:${execWidth(tl.rows)}px">`);
 
     out.push('<colgroup><col class="c-id"><col class="c-name"><col class="c-exec"><col class="c-status">');
     for (let i = 0; i < tl.nSlots; i++) out.push('<col class="c-slot">');
@@ -56,7 +73,7 @@
       out.push(`<th colspan="${g.to - g.from + 1}" style="background:${g.color}">${esc(text)}</th>`);
     }
     out.push('</tr><tr class="h-hours">');
-    out.push('<th class="fz fz1">ID</th><th class="fz fz2">Задача</th><th class="fz fz3">Исп.</th><th class="fz fz4">Статус</th>');
+    out.push('<th class="fz fz1">ID</th><th class="fz fz2">Задача</th><th class="fz fz3">Исполнители</th><th class="fz fz4">Статус</th>');
     for (const h of tl.hourHeads) out.push(`<th style="background:${h.color}">${h.label}</th>`);
     out.push('</tr></thead>');
 
@@ -69,7 +86,7 @@
       const url = M.taskUrl(t.id);
       out.push(`<td class="fz fz1 id">${url ? `<a class="task-link" href="${esc(url)}" target="_blank" rel="noopener" title="Открыть в Bitrix">${esc(t.id)}</a>` : esc(t.id)}</td>`);
       out.push(`<td class="fz fz2 name${r.isChild ? ' sub' : ''}">${nameCell(r)}</td>`);
-      out.push(`<td class="fz fz3 exec" style="color:${r.execColor}">${esc(r.execShort)}</td>`);
+      out.push(`<td class="fz fz3 exec">${execCell(r)}</td>`);
       out.push(`<td class="fz fz4 status" style="color:${r.statusColor};background:${r.statusBg}">${esc(t.status)}</td>`);
       for (let h = 0; h < tl.nSlots; h++) {
         const on = r.startIdx != null && r.startIdx <= h && h <= r.endIdx;
@@ -133,6 +150,7 @@
       <table>
         <tr><th>Проект</th><td>${esc(t.project || '—')}</td></tr>
         <tr><th>Исполнитель</th><td>${esc(t.executor)}</td></tr>
+        ${r.people.length > 1 || r.coExec.length ? `<tr><th>Участники</th><td>${r.people.map(p => `${esc(p.name)}${p.at ? ` <span class="tt-at">${M.fmtDMHM(p.at)}</span>` : ''}`).join('<br>')}</td></tr>` : ''}
         <tr><th>Вид продукции</th><td>${esc(t.product)}${t.mult > 1 ? ` <span class="mult">×${t.mult}</span>` : ''}</td></tr>
         ${t.isChild ? `<tr><th>Головная</th><td>#${esc(t.head)} — одна единица продукции</td></tr>` : ''}
         ${t.headOut ? `<tr><th>Головная</th><td>#${esc(t.parentId)} — не на ленте</td></tr>` : ''}

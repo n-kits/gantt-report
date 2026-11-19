@@ -201,6 +201,20 @@
     eq([html.includes('class="tree-t" data-id="200"'), html.includes('task child" data-head="200"'), html.includes('×3')], [true, true, true]);
   });
 
+  test('совместная задача: в «Исполнителях» после текущего — остальные отметившиеся, от последнего к первому', () => {
+    const works = 'Петров Борис Петрович (14.09.2026 09:10) = КГ: Основа; Сидоров Вадим Ильич (14.09.2026 08:40) = КГ: Поиск; ' +
+      'Петров Борис Петрович (14.09.2026 09:50) = 2D: Сборка; Иванова Анна Сергеевна (14.09.2026 10:05) = АНЛ: Проверка';
+    const row = ['Карта #300', 'Выполняется', '14.09.26 08:00:00', '', 'Петров Б.', '', 'Факты (Р24)', 'Плазма', works];
+    const tl = M.buildTimeline([row, ROWS[0]], { now: NOW, step: 1 });
+    const r = tl.rows.find(x => x.task.id === '300'), solo = tl.rows.find(x => x.task.id === '100');
+    eq([r.execShort, r.coExec], ['Петров', ['Иванова', 'Сидоров']], 'исполнитель первым, остальные — от последней отметки к первой, без повторов');
+    eq(r.people.map(p => [p.short, p.at.getHours(), p.at.getMinutes()]), [['Иванова', 10, 5], ['Петров', 9, 50], ['Сидоров', 8, 40]], 'по последней отметке человека');
+    eq(solo.coExec, [], 'без отметок — только исполнитель');
+    const html = window.GanttTimeline.render(tl);
+    eq(html.includes('<span class="co"> / Иванова / Сидоров</span>'), true);
+    eq(/--w-exec:(\d+)px/.exec(html)[1] > 86, true, 'колонка расширилась под участников');
+  });
+
   window.__testResults = results;
   const ok = results.filter(r => r.ok).length;
   const out = document.getElementById('out');
