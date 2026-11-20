@@ -215,6 +215,24 @@
     eq(/--w-exec:(\d+)px/.exec(html)[1] > 86, true, 'колонка расширилась под участников');
   });
 
+  test('доли часа: заливка крайних ячеек, «◆» в минуте срока, «Одновременно в работе» — пик за 15 минут', () => {
+    const R = (name, start, fin, dl) => [name, 'Завершена', start, fin, 'Иванова А.', dl || '', 'Факты (Р24)', 'Плазма', ''];
+    const rows = [
+      R('Утро #401', '14.09.26 08:40:00', '14.09.26 10:15:00', '14.09.26 10:00:00'),
+      // в часе 11 — две задачи, но не одновременно: старый расчёт дал бы 2
+      R('Раз #402', '14.09.26 11:05:00', '14.09.26 11:20:00', '14.09.26 11:30:00'),
+      R('Два #403', '14.09.26 11:40:00', '14.09.26 11:55:00'),
+    ];
+    const tl = M.buildTimeline(rows, { now: d(2026, 9, 14, 12), step: 1 });
+    const r = id => tl.rows.find(x => x.task.id === id);
+    eq([r('401').startIdx, r('401').endIdx, +r('401').fromFrac.toFixed(3), +r('401').toFrac.toFixed(3)], [4, 6, 0.667, 0.25]);
+    eq([r('401').dlFrac, r('402').dlFrac], [0, 0.5], 'срок ровно в 10:00 — на границе часа');
+    eq(tl.capacity[7].count, 1, '11–12: в каждой 15-минутке не больше одной');
+    const html = window.GanttTimeline.render(tl);
+    eq(html.includes('--pl:66.7%;--pr:0.0%'), true, '08:40 — закрашена последняя треть ячейки');
+    eq(html.includes('class="dlm" style="left:0.0%'), true);
+  });
+
   window.__testResults = results;
   const ok = results.filter(r => r.ok).length;
   const out = document.getElementById('out');

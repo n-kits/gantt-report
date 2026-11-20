@@ -14,6 +14,7 @@
   const STATUS_RUN = 'Выполняется';
   const STATUS_NEW = 'Зарегистрирована';
   const STATUS_UNPROC = 'Не обработана';
+  const STATUS_WAIT = 'Ожидающая'; // цвета — как у «Зарегистрирована»
 
   const DAY_START_HOUR = 4; // ось всегда начинается с 04:00
   const MAX_TIMELINE_COLS = 72;
@@ -51,16 +52,16 @@
   // плашка в колонке «Статус»: цвет текста и фон
   const STATUS_COLOR = {
     [STATUS_DONE]: C.white, [STATUS_REVIEW]: C.green, [STATUS_RUN]: C.blue,
-    [STATUS_NEW]: C.new_ink, [STATUS_UNPROC]: C.white,
+    [STATUS_NEW]: C.new_ink, [STATUS_WAIT]: C.new_ink, [STATUS_UNPROC]: C.white,
   };
   const STATUS_BG = {
     [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.green_bg, [STATUS_RUN]: C.blue_bg,
-    [STATUS_NEW]: C.new_bg, [STATUS_UNPROC]: C.alarm,
+    [STATUS_NEW]: C.new_bg, [STATUS_WAIT]: C.new_bg, [STATUS_UNPROC]: C.alarm,
   };
   // полоса на ленте (без нарушения срока)
   const BAR_COLOR = {
     [STATUS_DONE]: C.green, [STATUS_REVIEW]: C.review_bar, [STATUS_RUN]: C.blue,
-    [STATUS_NEW]: C.new_bar, [STATUS_UNPROC]: C.alarm,
+    [STATUS_NEW]: C.new_bar, [STATUS_WAIT]: C.new_bar, [STATUS_UNPROC]: C.alarm,
   };
   // «◆» на светлых полосах — тёмный в тон полосе; на насыщенных — белый
   const BAR_MARK = { [C.review_bar]: C.green, [C.review_late_bar]: C.red, [C.violet_bg]: C.violet, [C.new_bar]: C.new_ink };
@@ -328,8 +329,8 @@
   }
 
   function barColor(t) {
-    // «Зарегистрирована» и «Не обработана» — всегда своим цветом, даже после срока
-    if (t.status === STATUS_NEW || t.status === STATUS_UNPROC) return BAR_COLOR[t.status];
+    // «Зарегистрирована», «Ожидающая» и «Не обработана» — всегда своим цветом, даже после срока
+    if (t.status === STATUS_NEW || t.status === STATUS_WAIT || t.status === STATUS_UNPROC) return BAR_COLOR[t.status];
     if (t.late && t.status === STATUS_RUN) return C.violet_bg;
     if (t.late && t.status === STATUS_REVIEW) return C.review_late_bar;
     if (t.late) return C.red;
@@ -339,7 +340,7 @@
   // Обводка: у «на рассмотрении» — цвет, которым полоса станет после завершения,
   // у «зарегистрирована» — тёмно-оранжевый в тон полосе
   function barOutline(t) {
-    if (t.status === STATUS_NEW) return C.new_ink;
+    if (t.status === STATUS_NEW || t.status === STATUS_WAIT) return C.new_ink;
     if (t.status !== STATUS_REVIEW) return null;
     return t.late ? C.red : C.green;
   }
@@ -400,14 +401,25 @@
     const taskRows = tasks.map(t => {
       let startIdx = null;
       let endIdx = null;
+      // доля крайних ячеек: с какого места в первой начинается полоса и где кончается в последней (0..1)
+      let fromFrac = 0;
+      let toFrac = 1;
       if (t.start && t.actualEnd) {
         startIdx = clamp(Math.floor((t.start - base) / slotMs));
         endIdx = clamp(Math.floor(((t.actualEnd - base) / 1000 - 1) / (slotMs / 1000)));
+        const fs = (t.start - base) / slotMs - startIdx;
+        const fe = (t.actualEnd - base) / slotMs - endIdx;
+        fromFrac = Math.max(0, Math.min(1, fs));
+        toFrac = Math.max(0, Math.min(1, fe));
       }
       let dlIdx = null;
+      let dlFrac = 0.5;
       if (t.deadline) {
         const di = Math.floor((t.deadline - base) / slotMs);
-        if (di >= 0 && di < nSlots) dlIdx = di;
+        if (di >= 0 && di < nSlots) {
+          dlIdx = di;
+          dlFrac = (t.deadline - base) / slotMs - di; // место срока внутри колонки, 0..1
+        }
       }
       return {
         task: t,
@@ -423,7 +435,10 @@
         statusBg: STATUS_BG[t.status] || C.gray_bg,
         startIdx,
         endIdx,
+        fromFrac,
+        toFrac,
         dlIdx,
+        dlFrac,
         cutLeft: !!(t.start && t.start < base),
         isChild: t.isChild, hasKids: t.kids.length > 0, head: t.head || '',
       };
@@ -431,9 +446,15 @@
 
     // в работе в этом интервале: единица продукции (голова + подзадачи) — один раз, заказ «×2» — за два
     const units = unitsOf(tasks);
+    const busyIn = (hs, he) =>
+      units.reduce((a, u) => a + (u.parts.some(t => t.start && t.actualEnd && t.start < he && t.actualEnd > hs) ? u.k : 0), 0);
+    // колонка делится на 15-минутки, в ячейке — максимум одновременно за 15 минут,
+    // а не все, кто хоть минуту был в интервале
+    const Q = 15 * 60000;
     const capacity = hours.map(hs => {
       const he = addHours(hs, step);
-      const cnt = units.reduce((a, u) => a + (u.parts.some(t => t.start && t.actualEnd && t.start < he && t.actualEnd > hs) ? u.k : 0), 0);
+      let cnt = 0;
+      for (let q = +hs; q < +he; q += Q) cnt = Math.max(cnt, busyIn(new Date(q), new Date(q + Q)));
       return { count: cnt, color: capacityColor(cnt), textColor: cnt >= 8 ? C.white : C.navy };
     });
 
@@ -451,13 +472,13 @@
       rows: taskRows,
       capacity,
       subtitle:
-        `Колонка = ${step} ч. Заливка — задача шла в этом интервале. «◆» — крайний срок. ` +
+        `Колонка = ${step} ч. Заливка — часть интервала, когда задача шла. «◆» — минута крайнего срока. ` +
         `${fmtDMHM(base)} → ${fmtDMHM(windowEnd)}.`,
     };
   }
 
   const api = {
-    STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_UNPROC,
+    STATUS_DONE, STATUS_REVIEW, STATUS_RUN, STATUS_NEW, STATUS_WAIT, STATUS_UNPROC,
     DAY_START_HOUR, MAX_TIMELINE_COLS, TAIL_SLOTS, FIELD_ORDER, FIELD_TITLES, C,
     parseDt, extractId, stripId, shortName, guessNowFromFilename,
     loadTasks, treeOrder, unitsOf, participants, personKey, inferWindow, barColor, barOutline, capacityColor, buildTimeline,

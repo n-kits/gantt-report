@@ -220,8 +220,12 @@
     const table = el.scroller.querySelector('table.tl');
     let i = null;
     if (timeline && table) {
-      const k = Math.floor((Date.now() - timeline.base) / (timeline.step * 3600000));
+      const pos = (Date.now() - timeline.base) / (timeline.step * 3600000);
+      const k = Math.floor(pos);
       if (k >= 0 && k < timeline.nSlots) i = k;
+      // линия в минуте «сейчас» вместо заливки колонки
+      table.classList.add('now-line');
+      table.style.setProperty('--now-x', ((pos - k) * 100).toFixed(1) + '%');
     }
     if (i === nowIndex && nowCells.length) return;
     nowCells.forEach(c => c.classList.remove('now-col'));

@@ -54,6 +54,30 @@
     return `<span style="color:${r.execColor}">${esc(r.execShort)}</span>${co}`;
   }
 
+  // крайние ячейки полосы закрашены на ту долю часа, что задача в нём шла
+  const MIN_PART = 0.12; // совсем короткий кусок всё равно виден
+
+  // null — ячейка целиком; иначе [слева %, справа %] закрашенного куска
+  function partOf(r, h) {
+    let a = h === r.startIdx ? r.fromFrac : 0;
+    let b = h === r.endIdx ? r.toFrac : 1;
+    if (a <= 0 && b >= 1) return null;
+    if (b - a < MIN_PART) {
+      b = Math.min(1, a + MIN_PART);
+      a = b - MIN_PART;
+    }
+    return [(a * 100).toFixed(1), ((1 - b) * 100).toFixed(1)];
+  }
+
+  // «◆» стоит в той минуте часа, на которую назначен срок, с вертикальной чертой
+  // part — [слева %, справа %] заливки: «◆» вне неё — цветом срока, а не цветом метки полосы
+  function dlMark(r, part) {
+    // без сдвига: срок ровно в начале часа — ромб на границе ячеек, наполовину заходит в предыдущую
+    const x = Math.max(0, Math.min(100, r.dlFrac * 100));
+    const out = part && (x < +part[0] || x > 100 - part[1]);
+    return `<span class="dlm" style="left:${x.toFixed(1)}%${out ? ';color:var(--accent)' : ''}"><i></i></span>`;
+  }
+
   function render(tl) {
     const slotW = tl.step === 1 ? 24 : 30;
     const out = [];
@@ -98,9 +122,14 @@
           const olVar = r.barOutline ? `;--ol:${r.barOutline}` : '';
           // задача с прошлых дней: полоса уходит за левый край — стрелка в первой ячейке
           const cut = r.cutLeft && h === r.startIdx;
-          out.push(`<td class="s on${ol}${cut ? ' cut-l' : ''}" style="background:${r.barColor};color:${r.barMark}${olVar}">${dl ? '◆' : cut ? '←' : ''}</td>`);
+          const part = partOf(r, h);
+          const st = part
+            ? `--bar:${r.barColor};--pl:${part[0]}%;--pr:${part[1]}%;color:${r.barMark}${olVar}`
+            : `background:${r.barColor};color:${r.barMark}${olVar}`;
+          const mark = dl ? dlMark(r, part) : cut ? '←' : '';
+          out.push(`<td class="s on${ol}${cut ? ' cut-l' : ''}${part ? ' part' : ''}${dl ? ' dlx' : ''}" style="${st}">${mark}</td>`);
         } else if (dl) {
-          out.push('<td class="s dl">◆</td>');
+          out.push(`<td class="s dl dlx">${dlMark(r)}</td>`);
         } else {
           out.push('<td class="s"></td>');
         }

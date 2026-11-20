@@ -236,6 +236,36 @@ a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .tl td.s.ol.ol-r { --ol-sh: inset 0 1px 0 var(--ol), inset 0 -1px 0 var(--ol), inset -1px 0 0 var(--ol); }
 .tl td.s.ol.ol-l.ol-r { --ol-sh: inset 0 0 0 1px var(--ol); }
 
+/* крайняя ячейка закрашена на долю часа — кусок рисуется слоем, обводка идёт по нему */
+.tl td.s.part { position: relative; z-index: 0; }
+.tl td.s.part::before {
+  content: ''; position: absolute; top: 0; bottom: 0; z-index: -1;
+  left: var(--pl); right: var(--pr); background: var(--bar);
+}
+.tl td.s.part.ol { box-shadow: none; }
+.tl td.s.part.ol::before { box-shadow: var(--ol-sh); }
+/* слои выделения поверх куска полосы: подсветка колонки затемняет и кусок, и пустую часть ячейки */
+.tl td.s.part.col-hl::before { box-shadow: var(--ol-sh, 0 0 transparent), inset 0 0 0 999px rgba(15, 44, 58, .10); }
+.tl td.s.part.ol.col-hl { box-shadow: inset 0 0 0 999px rgba(15, 44, 58, .10); }
+/* строка под курсором: пустая часть таких ячеек — цветом строки, как у обычных пустых */
+.tl tr.task:hover td.s.part, .tl tr.task:hover td.s.dl.dlx { background: #EFEAE0; }
+
+/* «◆» в минуте срока — черта на всю высоту и ромб на ней; ячейка без сплошной заливки */
+.tl td.s.dlx { position: relative; z-index: 0; overflow: visible; }
+.tl td.s.dl.dlx { background: var(--empty); }
+/* .dlm — нулевой ширины на всю высоту ячейки в минуте срока: черта (::before) и ромб (i) по её центру.
+   Ячейку не обрезаем: ромб у границы часа заходит в соседнюю и рисуется поверх неё (ячейка позже в разметке) */
+.tl td.s.dlx .dlm { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
+.tl td.s.dlx .dlm::before {
+  content: ''; position: absolute; left: -0.5px; top: 0; bottom: 0;
+  border-left: 1px solid currentColor; opacity: .55;
+}
+/* ромб — повёрнутый квадрат, а не символ «◆»: у символа свои поля в шрифте, и он съезжает с черты */
+.tl td.s.dlx .dlm i {
+  position: absolute; left: 0; top: 50%; width: 6px; height: 6px; background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
 /* подсветка часовой колонки: затемнение поверх любого фона (пусто, полоса, срок) */
 .tl td.col-hl { box-shadow: inset 0 0 0 999px rgba(15, 44, 58, .10); }
 .tl td.s.ol.col-hl { box-shadow: var(--ol-sh), inset 0 0 0 999px rgba(15, 44, 58, .10); }
@@ -249,6 +279,16 @@ a.task-link:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
   background: rgba(196, 92, 38, .10);
 }
 .tl .h-hours th.now-col { background: var(--accent) !important; filter: none; }
+/* вместо заливки колонки — линия в минуте «сейчас» (--now-x задаёт app.js) */
+.tl.now-line td.now-col::after {
+  border: 0; background: var(--accent); opacity: .85;
+  left: var(--now-x, 50%); right: auto; width: 2px; transform: translateX(-1px); z-index: 0; /* ниже закреплённых колонок (.fz — 1) */
+}
+/* в строке «Одновременно в работе» — не линия минуты, а две боковые линии по краям часа */
+.tl.now-line tr.cap td.now-col::after {
+  left: 0; right: 0; width: auto; transform: none; opacity: 1; background: transparent;
+  border-left: 2px solid var(--accent); border-right: 2px solid var(--accent);
+}
 
 /* итоговая строка */
 .tl tr.gap td { background: #fff; border-right: 0; }
