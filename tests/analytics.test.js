@@ -37,6 +37,14 @@
     eq([M.tasks[0].onTime, M.tasks[0].lead], [null, null]);
   });
 
+  test('аналитика: «Ожидающая» с датой завершения — сдана, без даты — ещё в работе', () => {
+    const wait = f => Object.assign({}, PAYLOAD.tasks[2], { status: 'Ожидающая', finish: f });
+    const M = A.prepare(Object.assign({}, PAYLOAD, { tasks: [wait('2026-10-05T08:30'), Object.assign(wait(''), { id: '4' })] }));
+    eq(M.tasks.map(t => t.onTime), [true, null]);
+    const T = A.today(M, new Date(2026, 9, 5, 12, 0));
+    eq([T.open.today, T.late.today], [1, 1], 'в работе и просрочен только заказ без даты завершения');
+  });
+
   test('аналитика: подготовка модели — срок, время выполнения, вид продукции, регионы', () => {
     const M = A.prepare(PAYLOAD);
     eq([M.firstDay, M.lastDay], ['2026-10-01', '2026-10-05']);

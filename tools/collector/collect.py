@@ -369,10 +369,10 @@ def fetch_tasks(cfg: dict, geo_state: dict | None = None) -> dict:
 
 
 def still_open(status: str, finish: str) -> bool:
-    """Задача ещё идёт: не «Завершена» и не «На рассмотрении» с датой завершения (работа сдана).
+    """Задача ещё идёт: не «Завершена» и не «На рассмотрении» / «Ожидающая» с датой завершения (работа сдана).
     По статусу, а не по дате: «Выполняется» бывает с датой завершения — вернули с рассмотрения."""
     status = (status or "").strip()
-    return status != "Завершена" and not (status == "На рассмотрении" and (finish or "").strip())
+    return status != "Завершена" and not (status in ("На рассмотрении", "Ожидающая") and (finish or "").strip())
 
 
 def carry_candidates(cfg: dict, frm: datetime) -> list[tuple[str, str]]:
