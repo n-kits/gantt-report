@@ -697,7 +697,7 @@ ${fmtSigned(d.h)}` }),
         `<div class="delta">${C.perPerson.today == null ? '' : vsTypical(C.perPerson.today, C.perPerson, word)}</div></div>` +
       `<div class="kpi" title="Заказы дня с 2 и больше исполнителями (передачи, совместная работа) среди взятых"><div class="label">Совместных</div><div class="value">${fmtPct(C.joint.today)}</div>` +
         `<div class="delta">${C.joint.today == null || !C.joint.n ? '' : `обычно ${fmtPct(C.joint.med)} ${word}` + (Math.round(C.joint.lo * 100) !== Math.round(C.joint.hi * 100) ? ` (${fmtPct(C.joint.lo)}–${fmtPct(C.joint.hi)})` : '')}</div></div>` +
-      `<div class="kpi"><div class="label">Ещё не взяты</div><div class="value">${fmtN(C.notTaken)}</div><div class="delta">заказы дня без исполнителя</div></div>`;
+      `<div class="kpi"><div class="label">Ещё не взяты</div><div class="value">${fmtN(C.notTaken)}</div><div class="delta">нет отметок в «Выполнении задачи» и не назначен исполнитель</div></div>`;
     const ws = T.workers.map(w => Object.assign({}, w, { color: ctx.roleColor(w.role) }));
     if (!ws.length) ctx.$('t-workers').innerHTML = '<div class="an-empty">Сегодня заказы ещё никто не брал</div>';
     else hbars(ctx.$('t-workers'), ws.slice(0, 15), { title: 'Исполнители сегодня', labelW: 150, axis: true,

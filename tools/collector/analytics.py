@@ -79,8 +79,8 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
     people, tasks = {}, []
     have = {r[1] for r in db.execute("PRAGMA table_info(tasks)")}
     extra = ", ".join(c if c in have else f"NULL AS {c}" for c in ("mult", "parent", "checker"))
-    for tid, day, status, start, finish, deadline, project, product, works, mult, parent, checker in db.execute(
-            f"""SELECT id, day, status, start, finish, deadline, project, product, works, {extra}
+    for tid, day, status, start, finish, deadline, project, product, works, executor, mult, parent, checker in db.execute(
+            f"""SELECT id, day, status, start, finish, deadline, project, product, works, executor, {extra}
                FROM tasks WHERE day IS NOT NULL ORDER BY day, id"""):
         workers = sorted({short(n) for n in PERSON.findall(works or "")})
         for w in workers:
@@ -100,6 +100,9 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
             t["parent"] = parent
         if checker:
             t["checker"] = checker
+        # назначен ли «Исполнитель» — только признак, без фамилии: для «ещё не взяты» в режиме «Сегодня»
+        if (executor or "").strip():
+            t["ex"] = 1
         tasks.append(t)
     days = {day: checked for day, checked in db.execute(
         "SELECT day, MAX(last_seen) FROM tasks WHERE day IS NOT NULL GROUP BY day ORDER BY day")}

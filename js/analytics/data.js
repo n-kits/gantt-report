@@ -66,6 +66,7 @@
         places: places.length ? places : undefined,
         an: ans.length ? { themes: [...new Set(ans.flatMap(a => a.themes || []))], conflict: (ans.find(a => a.conflict) || ans[0]).conflict || '' } : null,
         checkers: [...new Set(parts.map(p => p.checker).filter(Boolean))],
+        ex: parts.some(p => p.ex),
         w: h.k > 1 ? h.k : 1,
         subs: kids.map(s => ({ id: s.id, status: s.status, start: s.start, finish: s.finish, deadline: s.deadline, workers: s.workers || [], k: s.k || 1 })),
         orphan: !!(h.parent && !byId.has(h.parent)),   // подзадача, чья голова не попала в выборку Bitrix
@@ -280,8 +281,9 @@
     // темы — фиксированный список (geo.THEMES), поэтому день честно сравним с обычным; только заказы с анализом
     const themes = vsPast(t => t.an ? t.an.themes : [], k => ({ label: k }));
 
-    // исполнители: нагрузка смены к этому часу против того же дня недели. Исполнители заполнены у взятых
-    // в работу заказов; «Зарегистрирована» без исполнителей — «ещё не взяты»
+    // исполнители: нагрузка смены к этому часу против того же дня недели. Исполнители (workers) — из «Выполнения
+    // задачи», заполнены у взятых в работу заказов. «Ещё не взяты» — нет отметок в «Выполнении задачи»
+    // и не назначен «Исполнитель» (ex; в старых данных признака нет — тогда только по отметкам)
     // заказов на человека — по участиям: совместный заказ засчитывается каждому участнику целиком (как в списке
     // «кто сколько взял»); иначе в дни передач и совместной работы показатель проседал бы при росте нагрузки.
     // joint — доля совместных (2+ исполнителя) среди взятых
@@ -317,7 +319,7 @@
       crew: { people: Object.assign({ today: crewNow.people }, spread(crewRef.map(x => x.people))),
               perPerson: Object.assign({ today: crewNow.perPerson }, spread(crewRef.map(x => x.perPerson).filter(v => v != null))),
               joint: Object.assign({ today: crewNow.joint }, spread(crewRef.map(x => x.joint).filter(v => v != null))),
-              notTaken: sumW(nowT) - crewNow.taken },
+              notTaken: sumW(nowT.filter(t => !(t.workers && t.workers.length) && !t.ex)) },
       workers,
     };
   }
