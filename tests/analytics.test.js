@@ -103,8 +103,10 @@
     const T = A.today(M, new Date(2026, 9, 13, 12, 0));
     eq([T.day, T.h, T.refs, T.refWord], ['2026-10-13', 8, ['2026-10-06'], 'вторникам']);
     eq([T.arrived.today, T.arrived.med, T.fullDay.med], [2, 2, 3], 'к 12:00 — 2 и 2, за прошлый вторник — 3');
-    eq([T.open.today, T.late.today], [2, 1], '«Выполняется» с датой завершения — ещё в работе; m — просрочен');
+    eq([T.open.today, T.late.today, T.late.open], [2, 1, 1], '«Выполняется» с датой завершения — ещё в работе; m — срок сегодня, просрочен, не сдан');
     eq([T.open.med, T.late.med], [1, 0], 'прошлый вторник в 12:00: b в работе, срок ещё не прошёл');
+    const E = A.today(M, new Date(2026, 9, 13, 21, 0));
+    eq([E.late.today, E.late.med], [1, 1], 'в 21:00: прошлый вторник — b сдан в 20:00 после срока 14:00, из счёта не выпадает; a — в срок');
     eq(T.curves.arrived.filter(p => p.k === 4 || p.k === 8).map(p => [p.today, p.med]), [[0, 0], [2, 2]]);
     eq(T.curves.arrived.find(p => p.k === 9).today, null, 'после «сейчас» — без сегодняшней линии');
     eq(T.places.map(p => [p.label, p.value, p.isNew]), [['Казань', 1, true]]);

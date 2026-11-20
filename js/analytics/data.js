@@ -215,18 +215,32 @@
   // когда заказ сдан: «Завершена» / «На рассмотрении» / «Ожидающая» с датой завершения; «Выполняется» с датой — вернули, ещё идёт
   const doneAt = t => DONE.includes(t.status) && t.finishD ? t.finishD : null;
 
-  // в работе в момент T: зарегистрирован (не раньше OPEN_MAX_DAYS) и ещё не сдан; просрочен — крайний срок прошёл
+  // в работе в момент T: зарегистрирован (не раньше OPEN_MAX_DAYS) и ещё не сдан
   function openAt(list, T) {
     const lo = T.getTime() - OPEN_MAX_DAYS * DAY;
-    let open = 0, late = 0;
+    let open = 0;
     for (const t of list) {
       if (!t.startD || t.startD > T || t.startD.getTime() < lo) continue;
       const e = doneAt(t);
       if (e && e <= T) continue;
       open += W(t);
-      if (t.deadlineD && t.deadlineD < T) late += W(t);
     }
-    return { open, late };
+    return { open };
+  }
+
+  // просрочено сегодня к моменту T: крайний срок — в рабочих сутках d (с 04:00) и уже прошёл, а к сроку не сдан
+  // (сдан позже или ещё не сдан; сданный с опозданием из счёта не выпадает). open — из них не сдано к T
+  function lateOn(list, d, T) {
+    const from = dayStart(d);
+    let late = 0, open = 0;
+    for (const t of list) {
+      if (!t.deadlineD || t.deadlineD < from || t.deadlineD >= T) continue;
+      const e = doneAt(t);
+      if (e && e <= t.deadlineD) continue;
+      late += W(t);
+      if (!e || e > T) open += W(t);
+    }
+    return { late, open };
   }
 
   function today(model, now, dims) {
@@ -254,8 +268,9 @@
     const openCurve = curve((d, hh) => openAt(list, at(d, hh)).open);
 
     const nowT = arrived(day, h);
-    const cur = openAt(list, now);
+    const cur = openAt(list, now), curLate = lateOn(list, day, now);
     const refOpen = refs.map(d => openAt(list, at(d, h)));
+    const refLate = refs.map(d => lateOn(list, d, at(d, h)));
 
     // разрезы «к этому часу»: сегодня и медиана тех же дней недели
     const slice = key => {
@@ -312,7 +327,7 @@
       arrived: Object.assign({ today: sumW(nowT) }, spread(refs.map(d => sumW(arrived(d, h))))),
       fullDay: spread(refs.map(d => sumW(byDay.get(d) || []))),
       open: Object.assign({ today: cur.open }, spread(refOpen.map(x => x.open))),
-      late: Object.assign({ today: cur.late }, spread(refOpen.map(x => x.late))),
+      late: Object.assign({ today: curLate.late, open: curLate.open }, spread(refLate.map(x => x.late))),
       analyzed: nowT.filter(t => t.an).length,
       curves: { arrived: arrivedCurve, open: openCurve },
       products: slice(t => t.pkey), projects: slice(t => t.project), places, themes,

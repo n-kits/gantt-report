@@ -584,8 +584,9 @@ ${fmtSigned(d.h)}` }),
         `<div class="delta">${left != null ? `после этого часа обычно приходит ещё ~${fmtN(left)}` : 'нет истории'}</div></div>`,
       `<div class="kpi"><div class="label">В работе сейчас</div><div class="value">${fmtN(T.open.today)}</div>` +
         `<div class="delta">${vsTypical(T.open.today, T.open, word)}</div></div>`,
-      `<div class="kpi"><div class="label">Просрочено сейчас</div><div class="value">${fmtN(T.late.today)}</div>` +
-        `<div class="delta">${vsTypical(T.late.today, T.late, word)}</div></div>`,
+      `<div class="kpi" title="Крайний срок сегодня уже прошёл, а к сроку заказ не сдали: сдали позже или ещё не сдан">` +
+        `<div class="label">Просрочено сегодня</div><div class="value">${fmtN(T.late.today)}</div>` +
+        `<div class="delta">${vsTypical(T.late.today, T.late, word)}${T.late.today ? `<br>из них не сдано: ${fmtN(T.late.open)}` : ''}</div></div>`,
     ].join('');
   }
 
