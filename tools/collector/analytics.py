@@ -26,6 +26,22 @@ HERE = Path(__file__).resolve().parent
 PERSON = re.compile(r"([А-ЯЁ][а-яё\-]+(?:\s+[А-ЯЁ][а-яё\-]+){1,2})\s*\(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\)\s*=")
 
 
+# отдельная запись в «Выполнении задачи» только с этим видом работ — проверка финальной графики (как «Проверяющий»)
+CHECK_WORK = "КГ: Поиск и проверка картографируемой информации"
+
+
+def check_only(works: str) -> list[str]:
+    """Кто проверял: люди, у которых в задаче есть запись ровно из одного вида работ CHECK_WORK
+    и нет других записей («Фамилия И. О.»)."""
+    ms = list(PERSON.finditer(works or ""))
+    solo, other = set(), set()
+    for i, m in enumerate(ms):
+        body = (works[m.end():ms[i + 1].start() if i + 1 < len(ms) else len(works)]).strip().rstrip(".").strip()
+        kinds = [k.strip() for k in body.split(";") if k.strip()]
+        (solo if kinds == [CHECK_WORK] else other).add(short(m.group(1)))
+    return sorted(solo - other)
+
+
 def short(name: str) -> str:
     """«Иванов Иван Иванович» → «Иванов И. И.»"""
     p = name.split()
@@ -100,6 +116,9 @@ def build(db: sqlite3.Connection, cartographers: list[str]) -> dict:
             t["parent"] = parent
         if checker:
             t["checker"] = checker
+        chk = check_only(works)
+        if chk:
+            t["chk"] = chk
         # назначен ли «Исполнитель» — только признак, без фамилии: для «ещё не взяты» в режиме «Сегодня»
         if (executor or "").strip():
             t["ex"] = 1

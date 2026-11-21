@@ -66,6 +66,10 @@
         places: places.length ? places : undefined,
         an: ans.length ? { themes: [...new Set(ans.flatMap(a => a.themes || []))], conflict: (ans.find(a => a.conflict) || ans[0]).conflict || '' } : null,
         checkers: [...new Set(parts.map(p => p.checker).filter(Boolean))],
+        // проверка отдельной записью в «Выполнении задачи» (chk, «Фамилия И. О.»); makers — исполнители без тех,
+        // кто в единице только проверял
+        chk: [...new Set(parts.flatMap(p => p.chk || []))],
+        makers: [...new Set(parts.flatMap(p => (p.workers || []).filter(w => !(p.chk || []).includes(w))))].sort(),
         ex: parts.some(p => p.ex),
         w: h.k > 1 ? h.k : 1,
         subs: kids.map(s => ({ id: s.id, status: s.status, start: s.start, finish: s.finish, deadline: s.deadline, workers: s.workers || [], k: s.k || 1 })),
@@ -77,11 +81,14 @@
   // «Фамилия И. О.» / «Фамилия И.» → «Фамилия И» — так сравниваем проверяющего с исполнителями
   const personKey = s => { const p = String(s || '').replace(/\./g, ' ').split(/\s+/).filter(Boolean); return p.length ? p[0] + ' ' + (p[1] || '').charAt(0) : ''; };
   // проверка финальной графики: ok — есть проверяющий не из исполнителей или проверял участник совместного заказа
-  // с другим картографом; self — проверил сам себя; none — проверяющего нет
+  // с другим картографом; self — проверил сам себя; none — проверяющего нет.
+  // Проверяющий — поле «Проверяющий» или отдельная запись «КГ: Поиск и проверка…» в «Выполнении задачи» (t.chk);
+  // исполнители — без тех, кто только проверял (t.makers)
   function checkOf(t, people) {
-    if (!t.checkers.length) return 'none';
-    const ws = t.workers.map(w => ({ w, k: personKey(w) }));
-    return t.checkers.some(c => {
+    const all = [...(t.checkers || []), ...(t.chk || [])];
+    if (!all.length) return 'none';
+    const ws = (t.makers || t.workers).map(w => ({ w, k: personKey(w) }));
+    return all.some(c => {
       const ck = personKey(c);
       return !ws.some(x => x.k === ck) || ws.some(x => x.k !== ck && people[x.w] === 'Картограф');
     }) ? 'ok' : 'self';
@@ -112,7 +119,8 @@
         startD: start, finishD: finish, deadlineD: deadline, pkey: productKey(t.product),
         lead: done && start ? (finish - start) / HOUR : null,
         onTime: done && deadline ? finish <= deadline : null,
-        done: !!done, check: checkOf(t, people), checkers: t.checkers.map(fullName),
+        done: !!done, check: checkOf(t, people),
+        checkers: [...new Set([...t.checkers.map(fullName), ...t.chk])],
         pids,
         // регионы для «Темы и регионы» — по координатам мест (у стран и вне регионов — страна)
         areas: t.an ? [...new Set(pids.map(id => places[id].area).filter(Boolean))] : null,

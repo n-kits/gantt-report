@@ -386,10 +386,13 @@
           <div class="an-graph" id="an-people-graph"></div>
           <details class="tbl"><summary>Таблица связей</summary><div class="scroll" id="an-people-table"></div></details>
         </section>
-        <section class="an-card w12">
+        <!-- «Проверяющие» скрыты с 21.11.2026 по решению пользователя; расчёт и разметка оставлены —
+             вернуть: убрать hidden (dashboard.js checks() пропускает скрытую карточку) -->
+        <section class="an-card w12" id="an-checks-card" hidden>
           <h3>Проверяющие</h3>
           <p class="an-cap">Проверку проходят все заказы; считаем по сданным. Проверка самого себя не засчитывается —
-            кроме совместного заказа с другим картографом. Головная задача и подзадача — один заказ, проверяющий — с подзадачи.</p>
+            кроме совместного заказа с другим картографом. Головная задача и подзадача — один заказ, проверяющий — с подзадачи. Проверкой считается и отдельная запись
+            в «Выполнении задачи» только с «КГ: Поиск и проверка картографируемой информации».</p>
           <div class="kpis" id="an-checks-kpis"></div>
           <div class="an-chart" id="an-checks"></div>
           <details class="tbl"><summary>По видам продукции</summary><div class="scroll" id="an-checks-t"></div></details>

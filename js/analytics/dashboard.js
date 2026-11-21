@@ -79,7 +79,7 @@
     if (!items.length) { el.innerHTML = '<div class="an-empty">Нет данных за период</div>'; return; }
     // колонка подписей — под самую длинную подпись (не меньше opts.labelW), но не больше 46% ширины;
     // что не влезло — обрезается по ширине текста, полное название — в подсказке
-    const W = widthOf(el), rowH = 26, bh = 16, valW = 44;
+    const W = widthOf(el), rowH = 26, bh = 16, valW = opts.valW || 44;
     const longest = Math.max(...items.map(it => textW(el, it.label)));
     const labelW = Math.min(Math.max(opts.labelW || 190, longest + 14), W * 0.46);
     // opts.axis — шкала снизу и вертикальная сетка (режим «Сегодня»: по ней читается черта «обычно»)
@@ -101,14 +101,28 @@
       const dim = (opts.isActive ? !opts.isActive(it) : opts.active && opts.active !== it.key) ? ' class="dim"' : '';
       const label = fitText(el, it.label, labelW - 12);
       s += `<g${dim}><text class="lbl" x="${labelW - 8}" y="${yy + bh / 2 + 4}" text-anchor="end">${esc(label)}</text>` +
-        `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>` +
+        // it.parts — составной столбик: сегменты [{ value, color, opacity }] подряд, 2px зазор, скруглён последний
+        (it.parts ? stackPath(it.parts, labelW, yy, bh, x) : `<path d="${barPath(labelW, yy, w, bh, 4)}" fill="${it.color || 'var(--an-s1)'}"/>`) +
         (it.ref != null ? `<line class="ref" x1="${labelW + x(it.ref)}" x2="${labelW + x(it.ref)}" y1="${yy - 3}" y2="${yy + bh + 3}"/>` : '') +
         // цифра — всегда сразу за столбиком; черта «обычно» может пройти по ней — белая обводка держит читаемость
-        `<text class="val${it.ref != null ? ' halo' : ''}" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
+        `<text class="val${it.ref != null ? ' halo' : ''}" x="${labelW + w + 6}" y="${yy + bh / 2 + 4}">${opts.valText ? opts.valText(it) : opts.fmt ? opts.fmt(it.value) : fmtN(it.value)}</text></g>` +
         `<rect class="hit${opts.onClick ? ' click' : ''}" data-i="${i}" x="0" y="${yy - 5}" width="${W}" height="${rowH}"/>`;
     });
     el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.title || '')}">${s}</svg>`;
     bindHits(el, items, opts.tip || (it => `<div class="t">${esc(it.label)}</div>${row('', 'Заказов', fmtN(it.value))}`), opts.onClick);
+  }
+
+  function stackPath(parts, x0, y, h, x) {
+    const segs = parts.filter(p => p.value > 0);
+    let s = '', at = x0;
+    segs.forEach((p, j) => {
+      const w = Math.max(1, x(p.value)), last = j === segs.length - 1, gap = last ? 0 : Math.min(2, w / 2);
+      const op = p.opacity != null ? ` fill-opacity="${p.opacity}"` : '';
+      s += last ? `<path d="${barPath(at, y, w, h, 4)}" fill="${p.color}"${op}/>`
+        : `<rect x="${at}" y="${y}" width="${w - gap}" height="${h}" fill="${p.color}"${op}/>`;
+      at += w;
+    });
+    return s;
   }
 
   function topN(map, n, otherLabel) {
@@ -497,11 +511,13 @@ ${fmtSigned(d.h)}` }),
 
   // === Проверяющие (проверка финальной графики) ============================
   // проверку обязаны проходить все заказы; считаем по сданным (Завершена / На рассмотрении / Ожидающая с датой).
-  // Проверил сам себя — не проверка, кроме совместного заказа с другим картографом (A.checkOf)
+  // Проверил сам себя — не проверка, кроме совместного заказа с другим картографом (A.checkOf).
+  // Проверяющий — из поля «Проверяющий» или отдельной записи «КГ: Поиск и проверка картографируемой информации»
   const bitrixLink = id => { const u = root.GanttModel && root.GanttModel.taskUrl(id); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(id)}</a>` : esc(id); };
   function checks(ctx) {
     const { list } = ctx;
     if (!ctx.$('checks')) return;                    // закэшированная страница без карточки
+    if (ctx.$('checks').closest('[hidden]')) return; // карточка скрыта (index.html, с 21.11.2026) — не считаем
     const done = list.filter(t => t.done);
     const ok = done.filter(t => t.check === 'ok'), self = done.filter(t => t.check === 'self'), none = done.filter(t => t.check === 'none');
     const n = sumW(done);
@@ -511,11 +527,23 @@ ${fmtSigned(d.h)}` }),
       `<div class="kpi"><div class="label">Проверил сам себя</div><div class="value">${fmtN(sumW(self))}</div><div class="delta">не в паре с другим картографом</div></div>`,
       `<div class="kpi"><div class="label">Проверяющих</div><div class="value">${fmtN(new Set(ok.flatMap(t => t.checkers)).size)}</div><div class="delta">за период</div></div>`,
     ].join('');
+    // картографам — вторым сегментом непроверенные сданные заказы (без проверяющего или «сам себя»), где они исполнители
     const by = countBy(ok, t => t.checkers, wt);
-    const items = [...by.entries()].map(([k, v]) => ({ key: k, label: k, value: v, color: ctx.roleColor(ctx.M.people[k] || 'Картограф') }))
-      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'ru'));
-    hbars(ctx.$('checks'), items.slice(0, 14), { title: 'Проверяющие', labelW: 130,
-      tip: it => `<div class="t">${esc(it.label)}</div>${row('', 'Проверил заказов', fmtN(it.value))}` });
+    const isCart = w => ctx.M.people[w] === 'Картограф';
+    const miss = countBy(done.filter(t => t.check !== 'ok'), t => t.makers.filter(isCart), wt);
+    const items = [...new Set([...by.keys(), ...miss.keys()])].map(k => {
+      const color = ctx.roleColor(ctx.M.people[k] || 'Картограф'), c = by.get(k) || 0, u = miss.get(k) || 0;
+      return { key: k, label: k, value: c + u, checked: c, unchecked: u, color,
+               parts: [{ value: c, color }, { value: u, color, opacity: 0.35 }] };
+    }).sort((a, b) => b.checked - a.checked || b.unchecked - a.unchecked || a.label.localeCompare(b.label, 'ru'));
+    hbars(ctx.$('checks'), items.slice(0, 14), { title: 'Проверяющие', labelW: 130, valW: 64,
+      valText: it => it.unchecked ? `${fmtN(it.checked)} + ${fmtN(it.unchecked)}` : fmtN(it.checked),
+      tip: it => `<div class="t">${esc(it.label)}</div>${row('', 'Проверил заказов', fmtN(it.checked))}` +
+        (isCart(it.key) ? row('', 'Свои заказы без проверки', fmtN(it.unchecked)) : '') });
+    const cc = ctx.roleColor('Картограф');
+    ctx.$('checks').insertAdjacentHTML('beforeend', `<div class="an-legend" style="margin-top:6px">` +
+      `<span><span class="sw" style="background:${cc}"></span>проверил заказов</span>` +
+      `<span><span class="sw" style="background:${cc};opacity:.35"></span>картограф: сданные заказы с его участием без проверки (нет проверяющего или проверил сам себя)</span></div>`);
     // строка таблицы: сдано, проверено, без проверяющего, сам себя, доля проверенных — с кратностью
     const line = (label, d) => {
       const k = sumW(d), c = x => sumW(d.filter(t => t.check === x));
